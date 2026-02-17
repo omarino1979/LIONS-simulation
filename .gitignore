@@ -1,0 +1,22 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pdf
+*.png
+*.jpg
+*.svg
+_lions_gui_temp.*
+.claude/
+
+# Fichiers de donnees binaires (trop volumineux pour git)
+*.dat
+*.bid
+nul
+
+# Documents Office (optionnel - a retirer si vous voulez les inclure)
+*.docx
+*.pptx
+
+# Resultats de simulation
+exp.for.*
+pdf_pages/

@@ -1,0 +1,1583 @@
+"""
+lions_input_form.py - Formulaire d'entree pour la simulation LIONS
+Integre tous les parametres du fichier de donnees + parametres runtime.
+"""
+
+import json
+import os
+import sys
+from PyQt5.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
+    QLabel, QLineEdit, QDoubleSpinBox, QSpinBox, QComboBox,
+    QPushButton, QFileDialog, QScrollArea, QToolButton,
+    QFrame, QGroupBox, QSizePolicy, QPlainTextEdit, QMessageBox
+)
+from PyQt5.QtCore import Qt, pyqtSignal
+
+
+class CollapsibleSection(QWidget):
+    """Section repliable avec un titre cliquable."""
+
+    def __init__(self, title, parent=None, collapsed=False):
+        super().__init__(parent)
+        self._is_collapsed = collapsed
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self.toggle_btn = QToolButton()
+        self.toggle_btn.setStyleSheet(
+            "QToolButton { font-weight: bold; border: none; "
+            "background: #e0e0e0; padding: 6px; }"
+            "QToolButton:hover { background: #d0d0d0; }"
+        )
+        self.toggle_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.toggle_btn.setArrowType(
+            Qt.RightArrow if collapsed else Qt.DownArrow)
+        self.toggle_btn.setText(title)
+        self.toggle_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.toggle_btn.clicked.connect(self._toggle)
+
+        self.content = QWidget()
+        self.content.setVisible(not collapsed)
+        self.content_layout = QFormLayout(self.content)
+        self.content_layout.setContentsMargins(10, 5, 5, 5)
+
+        layout.addWidget(self.toggle_btn)
+        layout.addWidget(self.content)
+
+    def _toggle(self):
+        self._is_collapsed = not self._is_collapsed
+        self.content.setVisible(not self._is_collapsed)
+        self.toggle_btn.setArrowType(
+            Qt.RightArrow if self._is_collapsed else Qt.DownArrow)
+
+    def add_row(self, label, widget):
+        self.content_layout.addRow(label, widget)
+        return widget
+
+
+def _make_double_spin(value=0.0, minimum=-1e12, maximum=1e12, decimals=6):
+    spin = QDoubleSpinBox()
+    spin.setRange(minimum, maximum)
+    spin.setDecimals(decimals)
+    spin.setValue(value)
+    spin.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+    return spin
+
+
+def _make_int_spin(value=0, minimum=-999999, maximum=999999):
+    spin = QSpinBox()
+    spin.setRange(minimum, maximum)
+    spin.setValue(value)
+    spin.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+    return spin
+
+
+def _make_file_row(default='', browse_cb=None):
+    """Cree un widget QLineEdit + bouton browse."""
+    w = QWidget()
+    lay = QHBoxLayout(w)
+    lay.setContentsMargins(0, 0, 0, 0)
+    edit = QLineEdit(default)
+    btn = QPushButton('...')
+    btn.setFixedWidth(30)
+    if browse_cb:
+        btn.clicked.connect(browse_cb)
+    lay.addWidget(edit)
+    lay.addWidget(btn)
+    return w, edit, btn
+
+
+def _fortran_fmt(val):
+    """Formate un float en notation Fortran (d0)."""
+    if val == 0.0:
+        return '0.d0'
+    s = f'{val:.10e}'.replace('e', 'd')
+    return s
+
+
+class _FamilyWidget(QGroupBox):
+    """Widget pour une famille d'ions avec spinboxes dedies."""
+
+    def __init__(self, index, parent=None):
+        super().__init__(f"Famille {index}", parent)
+        lay = QFormLayout(self)
+        self.nbrion_spin = _make_int_spin(1, 1, 999999)
+        self.amat_spin = _make_double_spin(100.0, 0.0, decimals=8)
+        self.a_mass_spin = _make_double_spin(100.0, 0.0, decimals=8)
+        self.qn_spin = _make_double_spin(22.0, 0.0, decimals=2)
+        self.r0_spin = _make_double_spin(0.033, 0.0, decimals=12)
+        self.teta0_spin = _make_double_spin(266.9, decimals=8)
+        self.z0_spin = _make_double_spin(0.0, decimals=6)
+        self.pr0_spin = _make_double_spin(426.28, decimals=8)
+        self.pz0_spin = _make_double_spin(0.0, decimals=6)
+        self.w0mev_spin = _make_double_spin(5.665e-3, 0.0, decimals=8)
+        self.phi0_spin = _make_double_spin(-250.0, decimals=4)
+        lay.addRow("Nb ions :", self.nbrion_spin)
+        lay.addRow("Masse atomique :", self.amat_spin)
+        lay.addRow("Nb masse A :", self.a_mass_spin)
+        lay.addRow("Charge Q :", self.qn_spin)
+        lay.addRow("r0 (m) :", self.r0_spin)
+        lay.addRow("teta0 (deg) :", self.teta0_spin)
+        lay.addRow("z0 (m) :", self.z0_spin)
+        lay.addRow("pr0 (mrad) :", self.pr0_spin)
+        lay.addRow("pz0 (mrad) :", self.pz0_spin)
+        lay.addRow("W0 (MeV/A) :", self.w0mev_spin)
+        lay.addRow("phi0 (deg) :", self.phi0_spin)
+
+    def get_values(self):
+        return {
+            'nbrion': self.nbrion_spin.value(),
+            'amat': self.amat_spin.value(),
+            'a_mass': self.a_mass_spin.value(),
+            'qn': self.qn_spin.value(),
+            'r0': self.r0_spin.value(),
+            'teta0': self.teta0_spin.value(),
+            'z0': self.z0_spin.value(),
+            'pr0': self.pr0_spin.value(),
+            'pz0': self.pz0_spin.value(),
+            'w0mev': self.w0mev_spin.value(),
+            'phi0': self.phi0_spin.value(),
+        }
+
+    def set_values(self, d):
+        self.nbrion_spin.setValue(d.get('nbrion', 1))
+        self.amat_spin.setValue(d.get('amat', 100.0))
+        self.a_mass_spin.setValue(d.get('a_mass', 100.0))
+        self.qn_spin.setValue(d.get('qn', 22.0))
+        self.r0_spin.setValue(d.get('r0', 0.033))
+        self.teta0_spin.setValue(d.get('teta0', 266.9))
+        self.z0_spin.setValue(d.get('z0', 0.0))
+        self.pr0_spin.setValue(d.get('pr0', 426.28))
+        self.pz0_spin.setValue(d.get('pz0', 0.0))
+        self.w0mev_spin.setValue(d.get('w0mev', 5.665e-3))
+        self.phi0_spin.setValue(d.get('phi0', -250.0))
+
+
+class InputFormPanel(QWidget):
+    """Panneau de formulaire avec toutes les entrees de la simulation LIONS."""
+
+    params_changed = pyqtSignal()
+    file_loaded = pyqtSignal(str)  # emis quand un fichier de donnees est charge
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumWidth(280)
+        self.setMaximumWidth(400)
+        self._loading = False  # flag pour eviter les boucles
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        container = QWidget()
+        main_layout = QVBoxLayout(container)
+        main_layout.setSpacing(5)
+
+        # ============================================================
+        # Section 1 : General (existant)
+        # ============================================================
+        self.sec_general = CollapsibleSection("General")
+        main_layout.addWidget(self.sec_general)
+
+        self.repswap_combo = QComboBox()
+        self.repswap_combo.addItems(['y', 'n'])
+        self.repswap_combo.setCurrentText('y')
+        self.sec_general.add_row("Byte swap :", self.repswap_combo)
+
+        file_widget = QWidget()
+        file_layout = QHBoxLayout(file_widget)
+        file_layout.setContentsMargins(0, 0, 0, 0)
+        self.ficin_edit = QLineEdit('don.120.ref_phi10_mars_2017')
+        btn_browse = QPushButton('...')
+        btn_browse.setFixedWidth(30)
+        btn_browse.clicked.connect(self._browse_ficin)
+        file_layout.addWidget(self.ficin_edit)
+        file_layout.addWidget(btn_browse)
+        self.sec_general.add_row("Fichier donnees :", file_widget)
+
+        # Bouton charger explicite
+        btn_load_don = QPushButton("Charger fichier donnees")
+        btn_load_don.clicked.connect(lambda: self.load_data_file(self.ficin_edit.text()))
+        self.sec_general.add_row("", btn_load_don)
+
+        # ============================================================
+        # Section 2 : Description
+        # ============================================================
+        self.sec_desc = CollapsibleSection("Description", collapsed=True)
+        main_layout.addWidget(self.sec_desc)
+
+        self.corps_edit = QLineEdit()
+        self.sec_desc.add_row("Titre :", self.corps_edit)
+
+        # ============================================================
+        # Section 3 : HF / Cyclotron
+        # ============================================================
+        self.sec_hf = CollapsibleSection("HF / Cyclotron", collapsed=True)
+        main_layout.addWidget(self.sec_hf)
+
+        self.npaspt_spin = _make_int_spin(1080, 1, 99999)
+        self.fhf_spin = _make_double_spin(14400000.0, 0.0, decimals=1)
+        self.pothf_spin = _make_double_spin(-51890.0, decimals=1)
+        self.teta1_spin = _make_double_spin(20.0, 0.0, 180.0, decimals=4)
+        self.harm_spin = _make_double_spin(3.0, 0.0, 20.0, decimals=1)
+        self.dbsb_spin = _make_double_spin(1.0e-4, decimals=8)
+        self.sec_hf.add_row("Pas/tour (npaspt) :", self.npaspt_spin)
+        self.sec_hf.add_row("Freq HF (Hz) :", self.fhf_spin)
+        self.sec_hf.add_row("Pot HF (V) :", self.pothf_spin)
+        self.sec_hf.add_row("Ouverture dee (deg) :", self.teta1_spin)
+        self.sec_hf.add_row("Harmonique :", self.harm_spin)
+        self.sec_hf.add_row("dB/B :", self.dbsb_spin)
+
+        # ============================================================
+        # Section 4 : Rayon / Tours
+        # ============================================================
+        self.sec_rayon = CollapsibleSection("Rayon / Tours", collapsed=True)
+        main_layout.addWidget(self.sec_rayon)
+
+        self.r1th_spin = _make_double_spin(1.50, 0.0, decimals=6)
+        self.ntours_spin = _make_int_spin(250, 1, 99999)
+        self.sec_rayon.add_row("Rayon final (m) :", self.r1th_spin)
+        self.sec_rayon.add_row("Nb tours :", self.ntours_spin)
+
+        # ============================================================
+        # Section 5 : Dees
+        # ============================================================
+        self.sec_dees = CollapsibleSection("Dees", collapsed=True)
+        main_layout.addWidget(self.sec_dees)
+
+        self.dphid_spin = _make_double_spin(0.0, decimals=4)
+        self.dphig_spin = _make_double_spin(0.0, decimals=4)
+        self.pothfd_spin = _make_double_spin(51890.0, 0.0, decimals=1)
+        self.pothfg_spin = _make_double_spin(51890.0, 0.0, decimals=1)
+        self.sec_dees.add_row("dphid (deg) :", self.dphid_spin)
+        self.sec_dees.add_row("dphig (deg) :", self.dphig_spin)
+        self.sec_dees.add_row("Pot dee D (V) :", self.pothfd_spin)
+        self.sec_dees.add_row("Pot dee G (V) :", self.pothfg_spin)
+
+        # ============================================================
+        # Section 6 : Harmoniques
+        # ============================================================
+        self.sec_harmo = CollapsibleSection("Harmoniques", collapsed=True)
+        main_layout.addWidget(self.sec_harmo)
+
+        self.ncoh0_spin = _make_int_spin(0, 0, 10)
+        self.sec_harmo.add_row("ncoh canal 0 :", self.ncoh0_spin)
+        self.coh0_detail = QWidget()
+        coh0_lay = QFormLayout(self.coh0_detail)
+        coh0_lay.setContentsMargins(0, 0, 0, 0)
+        self.coh0_edit = QLineEdit()
+        self.coh0_edit.setPlaceholderText("coefficients separes par espaces")
+        coh0_lay.addRow("Coeff coh[0] :", self.coh0_edit)
+        self.phihar0_spin = _make_double_spin(0.0, decimals=4)
+        coh0_lay.addRow("Phase (deg) :", self.phihar0_spin)
+        self.sec_harmo.content_layout.addRow(self.coh0_detail)
+        self.coh0_detail.setVisible(False)
+        self.ncoh0_spin.valueChanged.connect(
+            lambda v: self.coh0_detail.setVisible(v != 0))
+
+        sep_h = QFrame()
+        sep_h.setFrameShape(QFrame.HLine)
+        self.sec_harmo.content_layout.addRow(sep_h)
+
+        self.ncoh1_spin = _make_int_spin(0, 0, 10)
+        self.sec_harmo.add_row("ncoh canal 1 :", self.ncoh1_spin)
+        self.coh1_detail = QWidget()
+        coh1_lay = QFormLayout(self.coh1_detail)
+        coh1_lay.setContentsMargins(0, 0, 0, 0)
+        self.coh1_edit = QLineEdit()
+        self.coh1_edit.setPlaceholderText("coefficients separes par espaces")
+        coh1_lay.addRow("Coeff coh[1] :", self.coh1_edit)
+        self.phihar1_spin = _make_double_spin(0.0, decimals=4)
+        coh1_lay.addRow("Phase (deg) :", self.phihar1_spin)
+        self.sec_harmo.content_layout.addRow(self.coh1_detail)
+        self.coh1_detail.setVisible(False)
+        self.ncoh1_spin.valueChanged.connect(
+            lambda v: self.coh1_detail.setVisible(v != 0))
+
+        # ============================================================
+        # Section 7 : Geometrie Z
+        # ============================================================
+        self.sec_geomz = CollapsibleSection("Geometrie Z", collapsed=True)
+        main_layout.addWidget(self.sec_geomz)
+
+        self.zmin_spin = _make_double_spin(-0.5, decimals=4)
+        self.zmax_spin = _make_double_spin(0.5, decimals=4)
+        self.rmax1_spin = _make_double_spin(0.164, 0.0, decimals=6)
+        self.sec_geomz.add_row("zmin (m) :", self.zmin_spin)
+        self.sec_geomz.add_row("zmax (m) :", self.zmax_spin)
+        self.sec_geomz.add_row("rmax1 (m) :", self.rmax1_spin)
+
+        # ============================================================
+        # Section 8 : Extraction
+        # ============================================================
+        self.sec_extract = CollapsibleSection("Extraction", collapsed=True)
+        main_layout.addWidget(self.sec_extract)
+
+        self.rex_spin = _make_double_spin(-1.0, decimals=4)
+        self.tet1ex_spin = _make_double_spin(-1.0, decimals=4)
+        self.tet2ex_spin = _make_double_spin(-1.0, decimals=4)
+        self.eex_spin = _make_double_spin(-1.0, decimals=4)
+        self.sec_extract.add_row("rex (m) :", self.rex_spin)
+        self.sec_extract.add_row("tet1ex (deg) :", self.tet1ex_spin)
+        self.sec_extract.add_row("tet2ex (deg) :", self.tet2ex_spin)
+        self.sec_extract.add_row("eex :", self.eex_spin)
+
+        # Sous-section conditionnelle (rex < 0)
+        self.extract_detail = QWidget()
+        ext_lay = QFormLayout(self.extract_detail)
+        ext_lay.setContentsMargins(0, 0, 0, 0)
+
+        self.ndf_spin = _make_int_spin(0, 0, 10)
+        ext_lay.addRow("Nb deflecteurs :", self.ndf_spin)
+        self.edf_spin = _make_double_spin(0.0, decimals=0)
+        self.edf_spin.setRange(-1e9, 1e9)
+        self.edf_spin.setSingleStep(10000)
+        self.edf_spin.setSuffix(" V")
+        ext_lay.addRow("Tension extraction :", self.edf_spin)
+        self.deflectors_text = QPlainTextEdit()
+        self.deflectors_text.setPlaceholderText(
+            "1 ligne/deflecteur: rdf edf xdfi ydfi xdfo ydfo tetdfi_deg tetdfo_deg")
+        self.deflectors_text.setMaximumHeight(80)
+        ext_lay.addRow("Deflecteurs :", self.deflectors_text)
+
+        sep_e = QFrame()
+        sep_e.setFrameShape(QFrame.HLine)
+        ext_lay.addRow(sep_e)
+
+        self.ndm_spin = _make_int_spin(0, 0, 10)
+        ext_lay.addRow("Nb dipoles mag. :", self.ndm_spin)
+        self.magdip_text = QPlainTextEdit()
+        self.magdip_text.setPlaceholderText(
+            "1 ligne/dipole: rdm bdm xdm ydm tetdmi_deg tetdmo_deg")
+        self.magdip_text.setMaximumHeight(60)
+        ext_lay.addRow("Dipoles mag. :", self.magdip_text)
+
+        # Sous-section grilles (tet2ex > 0)
+        self.grids_detail = QWidget()
+        grid_lay = QFormLayout(self.grids_detail)
+        grid_lay.setContentsMargins(0, 0, 0, 0)
+        self.ngex_spin = _make_int_spin(0, 0, 10)
+        grid_lay.addRow("Nb grilles :", self.ngex_spin)
+        self.grids_text = QPlainTextEdit()
+        self.grids_text.setPlaceholderText(
+            "1 ligne/grille: tetagex xgex_mm ygex_mm xgexc_mm ygexc_mm")
+        self.grids_text.setMaximumHeight(60)
+        grid_lay.addRow("Grilles :", self.grids_text)
+        self.ficdebgex_edit = QLineEdit()
+        grid_lay.addRow("Fichier base grilles :", self.ficdebgex_edit)
+        ext_lay.addRow(self.grids_detail)
+        self.grids_detail.setVisible(False)
+
+        self.sec_extract.content_layout.addRow(self.extract_detail)
+        self.extract_detail.setVisible(False)
+
+        self.rex_spin.valueChanged.connect(self._on_rex_changed)
+        self.tet2ex_spin.valueChanged.connect(self._on_tet2ex_changed)
+
+        # ============================================================
+        # Section 9 : Ion(s)
+        # ============================================================
+        self.sec_ions = CollapsibleSection("Ion(s)", collapsed=True)
+        main_layout.addWidget(self.sec_ions)
+
+        self.nbrfam_spin = _make_int_spin(1, 1, 10)
+        self.sec_ions.add_row("Nb familles :", self.nbrfam_spin)
+
+        # Famille 1 (toujours visible)
+        fam1_group = QGroupBox("Famille 1")
+        fam1_lay = QFormLayout(fam1_group)
+        self.nbrion_spin = _make_int_spin(1, 1, 999999)
+        self.amat_spin = _make_double_spin(100.0, 0.0, decimals=8)
+        self.a_mass_spin = _make_double_spin(100.0, 0.0, decimals=8)
+        self.qn_spin = _make_double_spin(22.0, 0.0, decimals=2)
+        self.r0_spin = _make_double_spin(0.033, 0.0, decimals=12)
+        self.teta0_spin = _make_double_spin(266.9, decimals=8)
+        self.z0_spin = _make_double_spin(0.0, decimals=6)
+        self.pr0_spin = _make_double_spin(426.28, decimals=8)
+        self.pz0_spin = _make_double_spin(0.0, decimals=6)
+        self.w0mev_spin = _make_double_spin(5.665e-3, 0.0, decimals=8)
+        self.phi0_spin = _make_double_spin(-250.0, decimals=4)
+        fam1_lay.addRow("Nb ions :", self.nbrion_spin)
+        fam1_lay.addRow("Masse atomique :", self.amat_spin)
+        fam1_lay.addRow("Nb masse A :", self.a_mass_spin)
+        fam1_lay.addRow("Charge Q :", self.qn_spin)
+        fam1_lay.addRow("r0 (m) :", self.r0_spin)
+        fam1_lay.addRow("teta0 (deg) :", self.teta0_spin)
+        fam1_lay.addRow("z0 (m) :", self.z0_spin)
+        fam1_lay.addRow("pr0 (mrad) :", self.pr0_spin)
+        fam1_lay.addRow("pz0 (mrad) :", self.pz0_spin)
+        fam1_lay.addRow("W0 (MeV/A) :", self.w0mev_spin)
+        fam1_lay.addRow("phi0 (deg) :", self.phi0_spin)
+        self.sec_ions.content_layout.addRow(fam1_group)
+
+        # N total (visible seulement si nbrfam > 1)
+        self.n_total_widget = QWidget()
+        ntot_lay = QFormLayout(self.n_total_widget)
+        ntot_lay.setContentsMargins(0, 0, 0, 0)
+        self.n_total_spin = _make_int_spin(1, 1, 999999)
+        ntot_lay.addRow("N total particules :", self.n_total_spin)
+        self.sec_ions.content_layout.addRow(self.n_total_widget)
+        self.n_total_widget.setVisible(False)
+
+        # Container pour familles supplementaires (dynamique)
+        self.extra_fam_container = QWidget()
+        self.extra_fam_layout = QVBoxLayout(self.extra_fam_container)
+        self.extra_fam_layout.setContentsMargins(0, 0, 0, 0)
+        self.extra_fam_layout.setSpacing(4)
+        self.sec_ions.content_layout.addRow(self.extra_fam_container)
+        self.extra_families = []  # list of _FamilyWidget
+
+        self.nbrfam_spin.valueChanged.connect(self._on_nbrfam_changed)
+
+        # ============================================================
+        # Section 10 : Correlations
+        # ============================================================
+        self.sec_correl = CollapsibleSection("Correlations", collapsed=True)
+        main_layout.addWidget(self.sec_correl)
+
+        self.iflcor_spin = _make_int_spin(0, 0, 10)
+        self.sec_correl.add_row("iflcor :", self.iflcor_spin)
+
+        self.correl_detail = QWidget()
+        cor_lay = QFormLayout(self.correl_detail)
+        cor_lay.setContentsMargins(0, 0, 0, 0)
+        w_ficsig, self.ficsig_edit, _btn = _make_file_row('', lambda: self._browse_open(self.ficsig_edit))
+        cor_lay.addRow("Fichier sigma :", w_ficsig)
+        self.espace_edit = QLineEdit('6d')
+        cor_lay.addRow("Espace de phase :", self.espace_edit)
+        self.ficcor_edit = QLineEdit('no')
+        cor_lay.addRow("Fichier correl :", self.ficcor_edit)
+        self.ficmat_edit = QLineEdit('no')
+        cor_lay.addRow("Fichier matrice :", self.ficmat_edit)
+        self.ficdc_edit = QLineEdit('no')
+        cor_lay.addRow("Fichier dc :", self.ficdc_edit)
+        self.sec_correl.content_layout.addRow(self.correl_detail)
+        self.correl_detail.setVisible(False)
+        self.iflcor_spin.valueChanged.connect(
+            lambda v: self.correl_detail.setVisible(v != 0))
+
+        # ============================================================
+        # Section 11 : Simulation
+        # ============================================================
+        self.sec_simul = CollapsibleSection("Simulation", collapsed=True)
+        main_layout.addWidget(self.sec_simul)
+
+        self.nbdt_spin = _make_int_spin(350000, 1, 99999999)
+        self.ifreq_spin = _make_int_spin(30, 1, 999999)
+        self.sec_simul.add_row("Nb pas (nbdt) :", self.nbdt_spin)
+        self.sec_simul.add_row("Freq affichage :", self.ifreq_spin)
+
+        # ============================================================
+        # Section 12 : Fichiers Sortie
+        # ============================================================
+        self.sec_ficsort = CollapsibleSection("Fichiers Sortie", collapsed=True)
+        main_layout.addWidget(self.sec_ficsort)
+
+        self.ficz_edit = QLineEdit('no')
+        self.sec_ficsort.add_row("Fichier z :", self.ficz_edit)
+        self.ficxy_edit = QLineEdit('no')
+        self.sec_ficsort.add_row("Fichier xy :", self.ficxy_edit)
+
+        # ============================================================
+        # Section 13 : Fichiers Champs
+        # ============================================================
+        self.sec_ficchamps = CollapsibleSection("Fichiers Champs", collapsed=True)
+        main_layout.addWidget(self.sec_ficchamps)
+
+        w_ficb, self.ficb_edit, _btn = _make_file_row('', lambda: self._browse_ficb())
+        self.sec_ficchamps.add_row("Carte mag (ficb) :", w_ficb)
+        w_ficv1, self.ficv1_edit, _btn = _make_file_row('', lambda: self._browse_open(self.ficv1_edit))
+        self.sec_ficchamps.add_row("Pot centre (ficv1) :", w_ficv1)
+        w_ficv2, self.ficv2_edit, _btn = _make_file_row('', lambda: self._browse_open(self.ficv2_edit))
+        self.sec_ficchamps.add_row("Pot periph (ficv2) :", w_ficv2)
+
+        self.b_factor_spin = _make_double_spin(1.0, 0.0, 100.0, decimals=6)
+        self.b_factor_spin.setSuffix(" T")
+        self.b_factor_spin.setToolTip(
+            "Facteur B (Tesla). La carte magnetique est normalisee a 1,\n"
+            "puis multipliee par ce facteur. Ex: 1.56 T pour CIME.")
+        self.sec_ficchamps.add_row("Facteur B (T) :", self.b_factor_spin)
+
+        # ============================================================
+        # Section 14 : Trieur Vertical (existant)
+        # ============================================================
+        self.sec_vertical = CollapsibleSection("Trieur Vertical")
+        main_layout.addWidget(self.sec_vertical)
+
+        self.rmin_ver = _make_double_spin(1000.0, decimals=1)
+        self.rmax_ver = _make_double_spin(2000.0, decimals=1)
+        self.teta1_ver = _make_double_spin(0.0, decimals=2)
+        self.teta2_ver = _make_double_spin(0.0, decimals=2)
+        self.sec_vertical.add_row("rmin_ver :", self.rmin_ver)
+        self.sec_vertical.add_row("rmax_ver :", self.rmax_ver)
+        self.sec_vertical.add_row("teta1_ver (deg) :", self.teta1_ver)
+        self.sec_vertical.add_row("teta2_ver (deg) :", self.teta2_ver)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        self.sec_vertical.content_layout.addRow(sep)
+
+        self.pot_ver = _make_double_spin(0.0)
+        self.h_ver = _make_double_spin(0.0)
+        self.phi_ver = _make_double_spin(0.0, decimals=2)
+        self.anuz = _make_double_spin(0.0)
+        self.coupnuz = _make_double_spin(0.0)
+        self.dpotspot = _make_double_spin(0.0)
+        self.sec_vertical.add_row("pot_ver :", self.pot_ver)
+        self.sec_vertical.add_row("h_ver :", self.h_ver)
+        self.sec_vertical.add_row("phi_ver (deg) :", self.phi_ver)
+        self.sec_vertical.add_row("anuz :", self.anuz)
+        self.sec_vertical.add_row("coupnuz :", self.coupnuz)
+        self.sec_vertical.add_row("dpotspot :", self.dpotspot)
+
+        # ============================================================
+        # Section 15 : Bidim / Diagnostics (existant)
+        # ============================================================
+        self.sec_bidim = CollapsibleSection("Bidim / Diagnostics")
+        main_layout.addWidget(self.sec_bidim)
+
+        self.numbid_spin = _make_int_spin(0, 0, 999)
+        self.sec_bidim.add_row("Num premier bidim :", self.numbid_spin)
+        self.numbid_spin.valueChanged.connect(self._on_numbid_changed)
+
+        self.bidim_detail = QWidget()
+        bidim_layout = QFormLayout(self.bidim_detail)
+        bidim_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.ifreb_spin = _make_int_spin(1, 1, 999999)
+        bidim_layout.addRow("Freq. trace :", self.ifreb_spin)
+
+        self.baryc_combo = QComboBox()
+        self.baryc_combo.addItems(['c', 'b'])
+        bidim_layout.addRow("Centres/Barycentres :", self.baryc_combo)
+
+        self.bid_xmin = _make_double_spin(-0.5, decimals=4)
+        self.bid_xmax = _make_double_spin(0.5, decimals=4)
+        self.bid_ymin = _make_double_spin(-0.5, decimals=4)
+        self.bid_ymax = _make_double_spin(0.5, decimals=4)
+        bidim_layout.addRow("xmin (m) :", self.bid_xmin)
+        bidim_layout.addRow("xmax (m) :", self.bid_xmax)
+        bidim_layout.addRow("ymin (m) :", self.bid_ymin)
+        bidim_layout.addRow("ymax (m) :", self.bid_ymax)
+
+        self.multi_group = QGroupBox("Correlations (n > 1)")
+        multi_layout = QFormLayout(self.multi_group)
+        self.dphi_max = _make_double_spin(10.0, 0.0, decimals=2)
+        self.dwsw_max = _make_double_spin(0.01, 0.0, decimals=6)
+        self.dr_max = _make_double_spin(5.0, 0.0, decimals=2)
+        self.dpr_max = _make_double_spin(0.01, 0.0, decimals=6)
+        self.dz_max = _make_double_spin(5.0, 0.0, decimals=2)
+        self.dpz_max = _make_double_spin(0.01, 0.0, decimals=6)
+        self.itebid_spin = _make_int_spin(1, 1, 999999)
+        multi_layout.addRow("dphi_max :", self.dphi_max)
+        multi_layout.addRow("dw/w_max :", self.dwsw_max)
+        multi_layout.addRow("dr_max :", self.dr_max)
+        multi_layout.addRow("dpr/p0_max :", self.dpr_max)
+        multi_layout.addRow("dz_max :", self.dz_max)
+        multi_layout.addRow("dpz/p0_max :", self.dpz_max)
+        multi_layout.addRow("Debut iter bidim :", self.itebid_spin)
+        bidim_layout.addRow(self.multi_group)
+
+        self.bary_xmin = _make_double_spin(-0.2, decimals=4)
+        self.bary_xmax = _make_double_spin(0.2, decimals=4)
+        self.bary_ymin = _make_double_spin(-0.2, decimals=4)
+        self.bary_ymax = _make_double_spin(0.2, decimals=4)
+        bidim_layout.addRow("Bary xmin (m) :", self.bary_xmin)
+        bidim_layout.addRow("Bary xmax (m) :", self.bary_xmax)
+        bidim_layout.addRow("Bary ymin (m) :", self.bary_ymin)
+        bidim_layout.addRow("Bary ymax (m) :", self.bary_ymax)
+
+        ficrep_widget = QWidget()
+        ficrep_layout = QHBoxLayout(ficrep_widget)
+        ficrep_layout.setContentsMargins(0, 0, 0, 0)
+        self.ficrep_edit = QLineEdit('no')
+        btn_ficrep = QPushButton('...')
+        btn_ficrep.setFixedWidth(30)
+        btn_ficrep.clicked.connect(self._browse_ficrep)
+        ficrep_layout.addWidget(self.ficrep_edit)
+        ficrep_layout.addWidget(btn_ficrep)
+        bidim_layout.addRow("Fichier reperes :", ficrep_widget)
+
+        self.sec_bidim.content_layout.addRow(self.bidim_detail)
+        self.bidim_detail.setVisible(False)
+
+        # ============================================================
+        # Section 16 : Post-Simulation (existant)
+        # ============================================================
+        self.sec_post = CollapsibleSection("Post-Simulation")
+        main_layout.addWidget(self.sec_post)
+
+        self.save_trapped_combo = QComboBox()
+        self.save_trapped_combo.addItems(['n', 'o'])
+        self.sec_post.add_row("Sauver pieges :", self.save_trapped_combo)
+
+        ficpie_widget = QWidget()
+        ficpie_layout = QHBoxLayout(ficpie_widget)
+        ficpie_layout.setContentsMargins(0, 0, 0, 0)
+        self.ficpie_edit = QLineEdit('pieges.dat')
+        btn_ficpie = QPushButton('...')
+        btn_ficpie.setFixedWidth(30)
+        btn_ficpie.clicked.connect(self._browse_ficpie)
+        ficpie_layout.addWidget(self.ficpie_edit)
+        ficpie_layout.addWidget(btn_ficpie)
+        self.sec_post.add_row("Fichier pieges :", ficpie_widget)
+
+        # ============================================================
+        # Boutons sauver/charger
+        # ============================================================
+        btn_layout = QHBoxLayout()
+        btn_save = QPushButton("Sauver params")
+        btn_load = QPushButton("Charger params")
+        btn_save_don = QPushButton("Sauver donnees")
+        btn_save.clicked.connect(self.save_params)
+        btn_load.clicked.connect(self.load_params)
+        btn_save_don.clicked.connect(self._save_data_file_dialog)
+        btn_layout.addWidget(btn_save)
+        btn_layout.addWidget(btn_load)
+        btn_layout.addWidget(btn_save_don)
+        main_layout.addLayout(btn_layout)
+
+        main_layout.addStretch()
+        scroll.setWidget(container)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(scroll)
+
+    # ================================================================
+    # Callbacks de visibilite conditionnelle
+    # ================================================================
+
+    def _on_numbid_changed(self, val):
+        self.bidim_detail.setVisible(val != 0)
+
+    def _on_nbrfam_changed(self, val):
+        self.n_total_widget.setVisible(val > 1)
+        needed = val - 1  # nombre de familles supplementaires
+        # Ajouter les widgets manquants
+        while len(self.extra_families) < needed:
+            idx = len(self.extra_families) + 2  # famille 2, 3, ...
+            fw = _FamilyWidget(idx)
+            self.extra_fam_layout.addWidget(fw)
+            self.extra_families.append(fw)
+        # Masquer/afficher les widgets existants
+        for i, fw in enumerate(self.extra_families):
+            fw.setVisible(i < needed)
+        # Ajuster n_total pour qu'il soit >= somme nbrion
+        if val > 1:
+            total = self.nbrion_spin.value()
+            for i in range(needed):
+                total += self.extra_families[i].nbrion_spin.value()
+            if self.n_total_spin.value() < total:
+                self.n_total_spin.setValue(total)
+
+    def _on_rex_changed(self, val):
+        self.extract_detail.setVisible(val < 0)
+
+    def _on_tet2ex_changed(self, val):
+        self.grids_detail.setVisible(val > 0)
+
+    # ================================================================
+    # Browse callbacks
+    # ================================================================
+
+    def _browse_ficin(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Fichier de donnees")
+        if path:
+            self.ficin_edit.setText(path)
+            self.load_data_file(path)
+
+    def _browse_ficrep(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Fichier reperes")
+        if path:
+            self.ficrep_edit.setText(path)
+
+    def _browse_ficpie(self):
+        path, _ = QFileDialog.getSaveFileName(self, "Fichier pieges")
+        if path:
+            self.ficpie_edit.setText(path)
+
+    def _browse_open(self, edit_widget):
+        path, _ = QFileDialog.getOpenFileName(self, "Ouvrir fichier")
+        if path:
+            edit_widget.setText(path)
+
+    def _browse_ficb(self):
+        """Browse pour le fichier de champ magnetique + auto-detection Bmax."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Ouvrir carte magnetique", "",
+            "Cartes champ (*.dat *.lio.dat);;Tous (*)")
+        if path:
+            self.ficb_edit.setText(path)
+            self._auto_detect_bmax(path)
+
+    def _auto_detect_bmax(self, filepath):
+        """Lit le fichier de champ magnetique et met a jour Facteur B avec Bmax."""
+        try:
+            with open(filepath, 'r') as f:
+                f.readline()  # commentaire
+                vals = f.readline().split()
+                nr = int(vals[2])
+                ntet = int(vals[3])
+                # Lire le premier bloc (Bz)
+                bz_vals = []
+                while len(bz_vals) < nr * ntet:
+                    line = f.readline()
+                    if not line:
+                        break
+                    for tok in line.split():
+                        bz_vals.append(float(tok.replace('d', 'e').replace('D', 'e')))
+                if bz_vals:
+                    bmax = max(abs(v) for v in bz_vals[:nr * ntet])
+                    self.b_factor_spin.setValue(bmax)
+                    print(f'Bmax detecte : {bmax:.6e} T -> Facteur B mis a jour')
+        except Exception as e:
+            print(f'Auto-detection Bmax echouee : {e}')
+
+    def _save_data_file_dialog(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Sauver fichier de donnees", "", "Tous (*)")
+        if path:
+            self.write_data_file(path)
+
+    # ================================================================
+    # Chargement du fichier de donnees
+    # ================================================================
+
+    def load_data_file(self, path):
+        """Parse le fichier de donnees et remplit les champs GUI."""
+        if self._loading:
+            return
+        if not path or not os.path.exists(path):
+            return
+
+        self._loading = True
+        try:
+            self._do_load_data_file(path)
+            self.file_loaded.emit(path)
+        except Exception as e:
+            QMessageBox.warning(
+                self, "Erreur chargement",
+                f"Erreur lors du chargement de {path}:\n{e}")
+        finally:
+            self._loading = False
+
+    def _do_load_data_file(self, path):
+        """Logique de parsing du fichier de donnees (meme structure que lions.init())."""
+        # Import du parser Fortran
+        sys.path.insert(0, os.path.dirname(os.path.abspath(path)))
+        from lions import FortranFile, fortran_float
+
+        with open(path, 'r') as f_raw:
+            f = FortranFile(f_raw)
+
+            # 1. corps
+            corps = f.readline().strip().strip('"').strip("'")
+            self.corps_edit.setText(corps)
+
+            # 2. npaspt
+            vals = f.readline().split()
+            self.npaspt_spin.setValue(int(vals[0]))
+
+            # 3. r1th, ntours
+            vals = f.readline().split()
+            self.r1th_spin.setValue(fortran_float(vals[0]))
+            self.ntours_spin.setValue(int(vals[1]))
+
+            # 4. fhf, pothf, teta1, harm, dbsb
+            vals = f.readline().split()
+            self.fhf_spin.setValue(fortran_float(vals[0]))
+            self.pothf_spin.setValue(fortran_float(vals[1]))
+            teta1_val = fortran_float(vals[2])
+            self.teta1_spin.setValue(abs(teta1_val))
+            self.harm_spin.setValue(fortran_float(vals[3]))
+            self.dbsb_spin.setValue(fortran_float(vals[4]))
+
+            # 5. dphid, dphig (en degres dans le fichier)
+            vals = f.readline().split()
+            self.dphid_spin.setValue(fortran_float(vals[0]))
+            self.dphig_spin.setValue(fortran_float(vals[1]))
+
+            # 6. pothfd, pothfg (positif dans fichier, inverse a la lecture par init)
+            vals = f.readline().split()
+            self.pothfd_spin.setValue(fortran_float(vals[0]))
+            self.pothfg_spin.setValue(fortran_float(vals[1]))
+
+            # 7. ncoh[0]
+            vals = f.readline().split()
+            ncoh0 = int(vals[0])
+            self.ncoh0_spin.setValue(ncoh0)
+            if ncoh0 != 0:
+                coh_vals = f.readline().split()
+                self.coh0_edit.setText(' '.join(coh_vals[:ncoh0]))
+                phihar_vals = f.readline().split()
+                self.phihar0_spin.setValue(fortran_float(phihar_vals[0]))
+            else:
+                self.coh0_edit.setText('')
+                self.phihar0_spin.setValue(0.0)
+
+            # 8. ncoh[1]
+            vals = f.readline().split()
+            ncoh1 = int(vals[0])
+            self.ncoh1_spin.setValue(ncoh1)
+            if ncoh1 != 0:
+                coh_vals = f.readline().split()
+                self.coh1_edit.setText(' '.join(coh_vals[:ncoh1]))
+                phihar_vals = f.readline().split()
+                self.phihar1_spin.setValue(fortran_float(phihar_vals[0]))
+            else:
+                self.coh1_edit.setText('')
+                self.phihar1_spin.setValue(0.0)
+
+            # Note: si teta1 < 0, on lit yomega (stocke dans teta1_spin en absolu)
+            # Pour simplifier, on ne gere pas yomega dans la GUI pour l'instant
+            # (cas tres rare)
+            if teta1_val < 0:
+                _yomega_line = f.readline()  # consommer la ligne yomega
+
+            # 9. zmin, zmax, rmax1
+            vals = f.readline().split()
+            self.zmin_spin.setValue(fortran_float(vals[0]))
+            self.zmax_spin.setValue(fortran_float(vals[1]))
+            self.rmax1_spin.setValue(fortran_float(vals[2]))
+
+            # 10. rex, tet1ex, tet2ex, eex
+            vals = f.readline().split()
+            rex = fortran_float(vals[0])
+            tet1ex = fortran_float(vals[1])
+            tet2ex = fortran_float(vals[2])
+            eex = fortran_float(vals[3])
+            self.rex_spin.setValue(rex)
+            self.tet1ex_spin.setValue(tet1ex)
+            self.tet2ex_spin.setValue(tet2ex)
+            self.eex_spin.setValue(eex)
+
+            # Extraction conditionnelle
+            if rex < 0:
+                # ndf
+                ndf = int(f.readline().split()[0])
+                self.ndf_spin.setValue(ndf)
+                defl_lines = []
+                for _ in range(ndf):
+                    line = f.readline().strip()
+                    defl_lines.append(line)
+                self.deflectors_text.setPlainText('\n'.join(defl_lines))
+                # Extraire edf du premier deflecteur
+                if ndf > 0 and defl_lines:
+                    try:
+                        edf_val = fortran_float(defl_lines[0].split()[1])
+                        self.edf_spin.setValue(edf_val)
+                    except (IndexError, ValueError):
+                        self.edf_spin.setValue(0.0)
+                else:
+                    self.edf_spin.setValue(0.0)
+
+                # ndm
+                ndm = int(f.readline().split()[0])
+                self.ndm_spin.setValue(ndm)
+                mag_lines = []
+                for _ in range(ndm):
+                    line = f.readline().strip()
+                    mag_lines.append(line)
+                self.magdip_text.setPlainText('\n'.join(mag_lines))
+
+                # Grilles extraction
+                if tet2ex > 0:
+                    ngex = int(f.readline().split()[0])
+                    self.ngex_spin.setValue(ngex)
+                    grid_lines = []
+                    for _ in range(ngex):
+                        line = f.readline().strip()
+                        grid_lines.append(line)
+                    self.grids_text.setPlainText('\n'.join(grid_lines))
+                    ficdebgex = f.readline().strip()
+                    self.ficdebgex_edit.setText(ficdebgex)
+            else:
+                self.ndf_spin.setValue(0)
+                self.edf_spin.setValue(0.0)
+                self.deflectors_text.setPlainText('')
+                self.ndm_spin.setValue(0)
+                self.magdip_text.setPlainText('')
+
+            # 11. nbrfam
+            nbrfam = int(f.readline().split()[0])
+            self.nbrfam_spin.setValue(nbrfam)
+
+            # Si multi-famille, lire n total
+            if nbrfam > 1:
+                n_total = int(f.readline().split()[0])
+                self.n_total_spin.setValue(n_total)
+
+            # Famille 1
+            vals = f.readline().split()
+            self.nbrion_spin.setValue(int(vals[0]))
+            self.amat_spin.setValue(fortran_float(vals[1]))
+            self.a_mass_spin.setValue(fortran_float(vals[2]))
+            self.qn_spin.setValue(fortran_float(vals[3]))
+
+            vals = f.readline().split()
+            self.r0_spin.setValue(fortran_float(vals[0]))
+            self.teta0_spin.setValue(fortran_float(vals[1]))
+            self.z0_spin.setValue(fortran_float(vals[2]))
+            self.pr0_spin.setValue(fortran_float(vals[3]))
+            self.pz0_spin.setValue(fortran_float(vals[4]))
+            self.w0mev_spin.setValue(fortran_float(vals[5]))
+            self.phi0_spin.setValue(fortran_float(vals[6]))
+
+            # Familles supplementaires -> remplir les widgets dynamiques
+            # (nbrfam_spin.setValue a deja cree les widgets via _on_nbrfam_changed)
+            for k in range(nbrfam - 1):
+                vals_p = f.readline().split()
+                vals_i = f.readline().split()
+                # S'assurer que le widget existe
+                if k >= len(self.extra_families):
+                    self._on_nbrfam_changed(nbrfam)  # forcer la creation
+                fw = self.extra_families[k]
+                fw.nbrion_spin.setValue(int(vals_p[0]))
+                fw.amat_spin.setValue(fortran_float(vals_p[1]))
+                fw.a_mass_spin.setValue(fortran_float(vals_p[2]))
+                fw.qn_spin.setValue(fortran_float(vals_p[3]))
+                fw.r0_spin.setValue(fortran_float(vals_i[0]))
+                fw.teta0_spin.setValue(fortran_float(vals_i[1]))
+                fw.z0_spin.setValue(fortran_float(vals_i[2]))
+                fw.pr0_spin.setValue(fortran_float(vals_i[3]))
+                fw.pz0_spin.setValue(fortran_float(vals_i[4]))
+                fw.w0mev_spin.setValue(fortran_float(vals_i[5]))
+                fw.phi0_spin.setValue(fortran_float(vals_i[6]))
+
+            # 12. iflcor
+            iflcor = int(f.readline().split()[0])
+            self.iflcor_spin.setValue(iflcor)
+            if iflcor != 0:
+                ficsig = f.readline().strip()
+                self.ficsig_edit.setText(ficsig)
+                espace = f.readline().strip()
+                self.espace_edit.setText(espace)
+                cor_tokens = f.read_tokens(3)
+                self.ficcor_edit.setText(cor_tokens[0])
+                self.ficmat_edit.setText(cor_tokens[1])
+                self.ficdc_edit.setText(cor_tokens[2])
+
+            # 13. nbdt, ifreq
+            vals = f.readline().split()
+            self.nbdt_spin.setValue(int(vals[0]))
+            self.ifreq_spin.setValue(int(vals[1]))
+
+            # 14. ficz, ficxy
+            fic_tokens = f.read_tokens(2)
+            self.ficz_edit.setText(fic_tokens[0])
+            self.ficxy_edit.setText(fic_tokens[1])
+
+            # 15. ficb, ficv1, ficv2
+            fic_tokens = f.read_tokens(3)
+            self.ficb_edit.setText(fic_tokens[0])
+            self.ficv1_edit.setText(fic_tokens[1])
+            self.ficv2_edit.setText(fic_tokens[2])
+
+            # 15b. b_factor (optionnel, retro-compatible)
+            b_factor_found = False
+            try:
+                bf_tokens = f.read_tokens(1)
+                bf_val = fortran_float(bf_tokens[0])
+                self.b_factor_spin.setValue(bf_val)
+                b_factor_found = True
+            except Exception:
+                self.b_factor_spin.setValue(1.0)
+
+        # Si pas de b_factor dans le fichier, auto-detecter depuis ficb
+        if not b_factor_found:
+            ficb_path = self.ficb_edit.text().strip()
+            if ficb_path and ficb_path != 'no' and os.path.isfile(ficb_path):
+                self._auto_detect_bmax(ficb_path)
+
+    # ================================================================
+    # Ecriture du fichier de donnees
+    # ================================================================
+
+    def write_data_file(self, path):
+        """Ecrit les valeurs GUI dans un fichier de donnees au format Fortran."""
+        lines = []
+
+        # 1. corps
+        lines.append(f'"{self.corps_edit.text()}"')
+        # 2. npaspt
+        lines.append(str(self.npaspt_spin.value()))
+        # 3. r1th, ntours
+        lines.append(f'{_fortran_fmt(self.r1th_spin.value())} {self.ntours_spin.value()}')
+        # 4. fhf, pothf, teta1, harm, dbsb
+        lines.append(
+            f'{_fortran_fmt(self.fhf_spin.value())} '
+            f'{_fortran_fmt(self.pothf_spin.value())} '
+            f'{_fortran_fmt(self.teta1_spin.value())} '
+            f'{_fortran_fmt(self.harm_spin.value())} '
+            f'{_fortran_fmt(self.dbsb_spin.value())}')
+        # 5. dphid, dphig
+        lines.append(
+            f'{_fortran_fmt(self.dphid_spin.value())} '
+            f'{_fortran_fmt(self.dphig_spin.value())}')
+        # 6. pothfd, pothfg
+        lines.append(
+            f'{_fortran_fmt(self.pothfd_spin.value())} '
+            f'{_fortran_fmt(self.pothfg_spin.value())}')
+
+        # 7. ncoh[0]
+        ncoh0 = self.ncoh0_spin.value()
+        lines.append(str(ncoh0))
+        if ncoh0 != 0:
+            coh0_text = self.coh0_edit.text().strip()
+            if not coh0_text:
+                coh0_text = ' '.join(['0.d0'] * ncoh0)
+            lines.append(coh0_text)
+            lines.append(_fortran_fmt(self.phihar0_spin.value()))
+
+        # 8. ncoh[1]
+        ncoh1 = self.ncoh1_spin.value()
+        lines.append(str(ncoh1))
+        if ncoh1 != 0:
+            coh1_text = self.coh1_edit.text().strip()
+            if not coh1_text:
+                coh1_text = ' '.join(['0.d0'] * ncoh1)
+            lines.append(coh1_text)
+            lines.append(_fortran_fmt(self.phihar1_spin.value()))
+
+        # 9. zmin, zmax, rmax1
+        lines.append(
+            f'{_fortran_fmt(self.zmin_spin.value())} '
+            f'{_fortran_fmt(self.zmax_spin.value())} '
+            f'{_fortran_fmt(self.rmax1_spin.value())}')
+
+        # 10. rex, tet1ex, tet2ex, eex
+        rex = self.rex_spin.value()
+        tet2ex = self.tet2ex_spin.value()
+        lines.append(
+            f'{_fortran_fmt(rex)} '
+            f'{_fortran_fmt(self.tet1ex_spin.value())} '
+            f'{_fortran_fmt(tet2ex)} '
+            f'{_fortran_fmt(self.eex_spin.value())}')
+
+        # Extraction conditionnelle
+        if rex < 0:
+            ndf = self.ndf_spin.value()
+            lines.append(str(ndf))
+            if ndf > 0:
+                defl_text = self.deflectors_text.toPlainText().strip()
+                if defl_text:
+                    defl_lines_out = []
+                    for idx_dl, dl in enumerate(defl_text.splitlines()):
+                        dl = dl.strip()
+                        if not dl:
+                            continue
+                        # Injecter edf_spin dans le premier deflecteur
+                        if idx_dl == 0:
+                            parts = dl.split()
+                            if len(parts) >= 2:
+                                parts[1] = _fortran_fmt(self.edf_spin.value())
+                            dl = ' '.join(parts)
+                        defl_lines_out.append(dl)
+                    for dl in defl_lines_out:
+                        lines.append(dl)
+                else:
+                    # Premier deflecteur avec edf_spin, reste a zero
+                    edf_val = _fortran_fmt(self.edf_spin.value())
+                    lines.append(f'0.d0 {edf_val} 0.d0 0.d0 0.d0 0.d0 0.d0 0.d0')
+                    for _ in range(ndf - 1):
+                        lines.append('0.d0 0.d0 0.d0 0.d0 0.d0 0.d0 0.d0 0.d0')
+
+            ndm = self.ndm_spin.value()
+            lines.append(str(ndm))
+            if ndm > 0:
+                mag_text = self.magdip_text.toPlainText().strip()
+                if mag_text:
+                    for ml in mag_text.splitlines():
+                        if ml.strip():
+                            lines.append(ml.strip())
+                else:
+                    for _ in range(ndm):
+                        lines.append('0.d0 0.d0 0.d0 0.d0 0.d0 0.d0')
+
+            if tet2ex > 0:
+                ngex = self.ngex_spin.value()
+                lines.append(str(ngex))
+                # Ecrire exactement ngex lignes de grille
+                grid_lines_out = []
+                grid_text = self.grids_text.toPlainText().strip()
+                if grid_text:
+                    for gl in grid_text.splitlines():
+                        if gl.strip():
+                            grid_lines_out.append(gl.strip())
+                # Completer avec des lignes placeholder si necessaire
+                while len(grid_lines_out) < ngex:
+                    grid_lines_out.append('0.0 0.0 0.0 0.0 0.0')
+                for gl in grid_lines_out[:ngex]:
+                    lines.append(gl)
+                lines.append(self.ficdebgex_edit.text().strip() or 'grex')
+
+        # 11. nbrfam
+        nbrfam = self.nbrfam_spin.value()
+        lines.append(str(nbrfam))
+
+        # Si multi-famille, n total
+        if nbrfam > 1:
+            lines.append(str(self.n_total_spin.value()))
+
+        # Famille 1
+        lines.append(
+            f'{self.nbrion_spin.value()} '
+            f'{_fortran_fmt(self.amat_spin.value())} '
+            f'{_fortran_fmt(self.a_mass_spin.value())} '
+            f'{_fortran_fmt(self.qn_spin.value())}')
+        lines.append(
+            f'{_fortran_fmt(self.r0_spin.value())} '
+            f'{_fortran_fmt(self.teta0_spin.value())} '
+            f'{_fortran_fmt(self.z0_spin.value())} '
+            f'{_fortran_fmt(self.pr0_spin.value())} '
+            f'{_fortran_fmt(self.pz0_spin.value())} '
+            f'{_fortran_fmt(self.w0mev_spin.value())} '
+            f'{_fortran_fmt(self.phi0_spin.value())}')
+
+        # Familles supplementaires (depuis les widgets dynamiques)
+        for k in range(nbrfam - 1):
+            if k < len(self.extra_families):
+                fw = self.extra_families[k]
+                v = fw.get_values()
+            else:
+                # Fallback : copie famille 1
+                v = {
+                    'nbrion': self.nbrion_spin.value(),
+                    'amat': self.amat_spin.value(),
+                    'a_mass': self.a_mass_spin.value(),
+                    'qn': self.qn_spin.value(),
+                    'r0': self.r0_spin.value(),
+                    'teta0': self.teta0_spin.value(),
+                    'z0': self.z0_spin.value(),
+                    'pr0': self.pr0_spin.value(),
+                    'pz0': self.pz0_spin.value(),
+                    'w0mev': self.w0mev_spin.value(),
+                    'phi0': self.phi0_spin.value(),
+                }
+            lines.append(
+                f'{v["nbrion"]} '
+                f'{_fortran_fmt(v["amat"])} '
+                f'{_fortran_fmt(v["a_mass"])} '
+                f'{_fortran_fmt(v["qn"])}')
+            lines.append(
+                f'{_fortran_fmt(v["r0"])} '
+                f'{_fortran_fmt(v["teta0"])} '
+                f'{_fortran_fmt(v["z0"])} '
+                f'{_fortran_fmt(v["pr0"])} '
+                f'{_fortran_fmt(v["pz0"])} '
+                f'{_fortran_fmt(v["w0mev"])} '
+                f'{_fortran_fmt(v["phi0"])}')
+
+        # 12. iflcor
+        iflcor = self.iflcor_spin.value()
+        lines.append(str(iflcor))
+        if iflcor != 0:
+            lines.append(self.ficsig_edit.text().strip())
+            lines.append(self.espace_edit.text().strip())
+            lines.append(
+                f'{self.ficcor_edit.text().strip()} '
+                f'{self.ficmat_edit.text().strip()} '
+                f'{self.ficdc_edit.text().strip()}')
+
+        # 13. nbdt, ifreq
+        lines.append(f'{self.nbdt_spin.value()} {self.ifreq_spin.value()}')
+
+        # 14. ficz, ficxy
+        lines.append(self.ficz_edit.text().strip())
+        lines.append(self.ficxy_edit.text().strip())
+
+        # ligne vide pour separation avant fichiers quotes
+        lines.append('')
+
+        # 15. ficb, ficv1, ficv2 (quotes simples)
+        # Ecrire 'no' si le champ est vide pour eviter FileNotFoundError
+        ficb_val = self.ficb_edit.text().strip() or 'no'
+        ficv1_val = self.ficv1_edit.text().strip() or 'no'
+        ficv2_val = self.ficv2_edit.text().strip() or 'no'
+        lines.append(f"'{ficb_val}'")
+        lines.append(f"'{ficv1_val}'")
+        lines.append(f"'{ficv2_val}'")
+        # 15b. b_factor (facteur champ magnetique en Tesla)
+        lines.append(f'{_fortran_fmt(self.b_factor_spin.value())}')
+
+        # Ecriture
+        with open(path, 'w') as fout:
+            fout.write('\n'.join(lines) + '\n')
+
+        # Log des valeurs de chaque famille pour verification
+        self._log_family_summary(nbrfam)
+
+        return path
+
+    def _log_family_summary(self, nbrfam):
+        """Affiche un resume des valeurs de chaque famille (pour debug)."""
+        summary = [f"[write_data_file] {nbrfam} famille(s) :"]
+        summary.append(
+            f"  Fam 1: nbrion={self.nbrion_spin.value()}, "
+            f"amat={self.amat_spin.value()}, qn={self.qn_spin.value()}, "
+            f"w0={self.w0mev_spin.value()}")
+        for k in range(nbrfam - 1):
+            if k < len(self.extra_families):
+                fw = self.extra_families[k]
+                summary.append(
+                    f"  Fam {k+2}: nbrion={fw.nbrion_spin.value()}, "
+                    f"amat={fw.amat_spin.value()}, qn={fw.qn_spin.value()}, "
+                    f"w0={fw.w0mev_spin.value()}")
+        print('\n'.join(summary))
+
+    # ================================================================
+    # Geometrie des deflecteurs pour le plot XY
+    # ================================================================
+
+    def get_deflector_geometry(self):
+        """Retourne la geometrie des deflecteurs pour l'affichage sur le plot XY.
+
+        Returns:
+            list of dicts avec cles : rdf_m, xdfi_m, ydfi_m, xdfo_m,
+            ydfo_m, tetdfi_deg, tetdfo_deg
+        """
+        if self.rex_spin.value() >= 0:
+            return []
+        ndf = self.ndf_spin.value()
+        if ndf <= 0:
+            return []
+        text = self.deflectors_text.toPlainText().strip()
+        if not text:
+            return []
+
+        from lions import fortran_float
+        result = []
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            if len(parts) < 8:
+                continue
+            try:
+                result.append({
+                    'rdf_m': fortran_float(parts[0]),
+                    'xdfi_m': fortran_float(parts[2]),
+                    'ydfi_m': fortran_float(parts[3]),
+                    'xdfo_m': fortran_float(parts[4]),
+                    'ydfo_m': fortran_float(parts[5]),
+                    'tetdfi_deg': fortran_float(parts[6]),
+                    'tetdfo_deg': fortran_float(parts[7]),
+                })
+            except (ValueError, IndexError):
+                continue
+        return result
+
+    # ================================================================
+    # Sequences pour le worker (input queue)
+    # ================================================================
+
+    def get_input_sequence(self):
+        """Construit la liste ordonnee des reponses pour le monkey-patching input()."""
+        # Ecrire un fichier temporaire avec les valeurs GUI
+        ficin_orig = self.ficin_edit.text()
+        if ficin_orig:
+            work_dir = os.path.dirname(os.path.abspath(ficin_orig))
+        else:
+            work_dir = '.'
+        temp_path = os.path.join(work_dir, '_lions_gui_temp.dat')
+        self.write_data_file(temp_path)
+
+        answers = []
+        # 1. repswap
+        answers.append(self.repswap_combo.currentText())
+        # 2. ficin (fichier temporaire)
+        answers.append(temp_path)
+        # 3. rmin_ver rmax_ver teta1_ver teta2_ver
+        answers.append(
+            f"{self.rmin_ver.value()} {self.rmax_ver.value()} "
+            f"{self.teta1_ver.value()} {self.teta2_ver.value()}")
+        # 4. pot_ver h_ver phi_ver anuz coupnuz dpotspot
+        answers.append(
+            f"{self.pot_ver.value()} {self.h_ver.value()} "
+            f"{self.phi_ver.value()} {self.anuz.value()} "
+            f"{self.coupnuz.value()} {self.dpotspot.value()}")
+        # 5. numbid
+        answers.append(str(self.numbid_spin.value()))
+
+        if self.numbid_spin.value() != 0:
+            answers.append(str(self.ifreb_spin.value()))
+            answers.append(self.baryc_combo.currentText())
+            answers.append(
+                f"{self.bid_xmin.value()} {self.bid_xmax.value()} "
+                f"{self.bid_ymin.value()} {self.bid_ymax.value()}")
+            answers.append(
+                f"{self.bary_xmin.value()} {self.bary_xmax.value()} "
+                f"{self.bary_ymin.value()} {self.bary_ymax.value()}")
+            answers.append(self.ficrep_edit.text() or "no")
+
+        return answers
+
+    def get_post_answers(self):
+        """Reponses pour la phase post-simulation (pieges)."""
+        answers = []
+        answers.append(self.save_trapped_combo.currentText())
+        if self.save_trapped_combo.currentText() == 'o':
+            answers.append(self.ficpie_edit.text())
+        return answers
+
+    # ================================================================
+    # Sauver / Charger parametres JSON
+    # ================================================================
+
+    def save_params(self):
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Sauver parametres", "", "JSON (*.json)")
+        if not path:
+            return
+        data = self._collect_all_params()
+        with open(path, 'w') as f:
+            json.dump(data, f, indent=2)
+
+    def load_params(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Charger parametres", "", "JSON (*.json)")
+        if not path:
+            return
+        with open(path, 'r') as f:
+            data = json.load(f)
+        self._apply_all_params(data)
+
+    def _collect_all_params(self):
+        """Collecte tous les parametres dans un dict."""
+        return {
+            # General
+            'repswap': self.repswap_combo.currentText(),
+            'ficin': self.ficin_edit.text(),
+            # Description
+            'corps': self.corps_edit.text(),
+            # HF
+            'npaspt': self.npaspt_spin.value(),
+            'fhf': self.fhf_spin.value(),
+            'pothf': self.pothf_spin.value(),
+            'teta1': self.teta1_spin.value(),
+            'harm': self.harm_spin.value(),
+            'dbsb': self.dbsb_spin.value(),
+            # Rayon/Tours
+            'r1th': self.r1th_spin.value(),
+            'ntours': self.ntours_spin.value(),
+            # Dees
+            'dphid': self.dphid_spin.value(),
+            'dphig': self.dphig_spin.value(),
+            'pothfd': self.pothfd_spin.value(),
+            'pothfg': self.pothfg_spin.value(),
+            # Harmoniques
+            'ncoh0': self.ncoh0_spin.value(),
+            'coh0': self.coh0_edit.text(),
+            'phihar0': self.phihar0_spin.value(),
+            'ncoh1': self.ncoh1_spin.value(),
+            'coh1': self.coh1_edit.text(),
+            'phihar1': self.phihar1_spin.value(),
+            # Geometrie Z
+            'zmin': self.zmin_spin.value(),
+            'zmax': self.zmax_spin.value(),
+            'rmax1': self.rmax1_spin.value(),
+            # Extraction
+            'rex': self.rex_spin.value(),
+            'tet1ex': self.tet1ex_spin.value(),
+            'tet2ex': self.tet2ex_spin.value(),
+            'eex': self.eex_spin.value(),
+            'ndf': self.ndf_spin.value(),
+            'edf': self.edf_spin.value(),
+            'deflectors': self.deflectors_text.toPlainText(),
+            'ndm': self.ndm_spin.value(),
+            'magdip': self.magdip_text.toPlainText(),
+            'ngex': self.ngex_spin.value(),
+            'grids': self.grids_text.toPlainText(),
+            'ficdebgex': self.ficdebgex_edit.text(),
+            # Ions
+            'nbrfam': self.nbrfam_spin.value(),
+            'n_total': self.n_total_spin.value(),
+            'nbrion': self.nbrion_spin.value(),
+            'amat': self.amat_spin.value(),
+            'a_mass': self.a_mass_spin.value(),
+            'qn': self.qn_spin.value(),
+            'r0': self.r0_spin.value(),
+            'teta0': self.teta0_spin.value(),
+            'z0': self.z0_spin.value(),
+            'pr0': self.pr0_spin.value(),
+            'pz0': self.pz0_spin.value(),
+            'w0mev': self.w0mev_spin.value(),
+            'phi0': self.phi0_spin.value(),
+            'extra_families': [fw.get_values() for fw in self.extra_families
+                               if fw.isVisible()],
+            # Correlations
+            'iflcor': self.iflcor_spin.value(),
+            'ficsig': self.ficsig_edit.text(),
+            'espace': self.espace_edit.text(),
+            'ficcor': self.ficcor_edit.text(),
+            'ficmat': self.ficmat_edit.text(),
+            'ficdc': self.ficdc_edit.text(),
+            # Simulation
+            'nbdt': self.nbdt_spin.value(),
+            'ifreq': self.ifreq_spin.value(),
+            # Fichiers sortie
+            'ficz': self.ficz_edit.text(),
+            'ficxy': self.ficxy_edit.text(),
+            # Fichiers champs
+            'ficb': self.ficb_edit.text(),
+            'ficv1': self.ficv1_edit.text(),
+            'ficv2': self.ficv2_edit.text(),
+            'b_factor': self.b_factor_spin.value(),
+            # Trieur vertical
+            'rmin_ver': self.rmin_ver.value(),
+            'rmax_ver': self.rmax_ver.value(),
+            'teta1_ver': self.teta1_ver.value(),
+            'teta2_ver': self.teta2_ver.value(),
+            'pot_ver': self.pot_ver.value(),
+            'h_ver': self.h_ver.value(),
+            'phi_ver': self.phi_ver.value(),
+            'anuz': self.anuz.value(),
+            'coupnuz': self.coupnuz.value(),
+            'dpotspot': self.dpotspot.value(),
+            # Bidim
+            'numbid': self.numbid_spin.value(),
+            'ifreb': self.ifreb_spin.value(),
+            'baryc': self.baryc_combo.currentText(),
+            'bid_xmin': self.bid_xmin.value(),
+            'bid_xmax': self.bid_xmax.value(),
+            'bid_ymin': self.bid_ymin.value(),
+            'bid_ymax': self.bid_ymax.value(),
+            'dphi_max': self.dphi_max.value(),
+            'dwsw_max': self.dwsw_max.value(),
+            'dr_max': self.dr_max.value(),
+            'dpr_max': self.dpr_max.value(),
+            'dz_max': self.dz_max.value(),
+            'dpz_max': self.dpz_max.value(),
+            'itebid': self.itebid_spin.value(),
+            'bary_xmin': self.bary_xmin.value(),
+            'bary_xmax': self.bary_xmax.value(),
+            'bary_ymin': self.bary_ymin.value(),
+            'bary_ymax': self.bary_ymax.value(),
+            'ficrep': self.ficrep_edit.text(),
+            # Post-simulation
+            'save_trapped': self.save_trapped_combo.currentText(),
+            'ficpie': self.ficpie_edit.text(),
+        }
+
+    def _apply_all_params(self, data):
+        """Applique un dict de parametres aux champs GUI."""
+        # General
+        self.repswap_combo.setCurrentText(data.get('repswap', 'y'))
+        self.ficin_edit.setText(data.get('ficin', ''))
+        # Description
+        self.corps_edit.setText(data.get('corps', ''))
+        # HF
+        self.npaspt_spin.setValue(data.get('npaspt', 1080))
+        self.fhf_spin.setValue(data.get('fhf', 14400000.0))
+        self.pothf_spin.setValue(data.get('pothf', -51890.0))
+        self.teta1_spin.setValue(data.get('teta1', 20.0))
+        self.harm_spin.setValue(data.get('harm', 3.0))
+        self.dbsb_spin.setValue(data.get('dbsb', 1e-4))
+        # Rayon/Tours
+        self.r1th_spin.setValue(data.get('r1th', 1.50))
+        self.ntours_spin.setValue(data.get('ntours', 250))
+        # Dees
+        self.dphid_spin.setValue(data.get('dphid', 0.0))
+        self.dphig_spin.setValue(data.get('dphig', 0.0))
+        self.pothfd_spin.setValue(data.get('pothfd', 51890.0))
+        self.pothfg_spin.setValue(data.get('pothfg', 51890.0))
+        # Harmoniques
+        self.ncoh0_spin.setValue(data.get('ncoh0', 0))
+        self.coh0_edit.setText(data.get('coh0', ''))
+        self.phihar0_spin.setValue(data.get('phihar0', 0.0))
+        self.ncoh1_spin.setValue(data.get('ncoh1', 0))
+        self.coh1_edit.setText(data.get('coh1', ''))
+        self.phihar1_spin.setValue(data.get('phihar1', 0.0))
+        # Geometrie Z
+        self.zmin_spin.setValue(data.get('zmin', -0.5))
+        self.zmax_spin.setValue(data.get('zmax', 0.5))
+        self.rmax1_spin.setValue(data.get('rmax1', 0.164))
+        # Extraction
+        self.rex_spin.setValue(data.get('rex', -1.0))
+        self.tet1ex_spin.setValue(data.get('tet1ex', -1.0))
+        self.tet2ex_spin.setValue(data.get('tet2ex', -1.0))
+        self.eex_spin.setValue(data.get('eex', -1.0))
+        self.ndf_spin.setValue(data.get('ndf', 0))
+        self.edf_spin.setValue(data.get('edf', 0.0))
+        self.deflectors_text.setPlainText(data.get('deflectors', ''))
+        self.ndm_spin.setValue(data.get('ndm', 0))
+        self.magdip_text.setPlainText(data.get('magdip', ''))
+        self.ngex_spin.setValue(data.get('ngex', 0))
+        self.grids_text.setPlainText(data.get('grids', ''))
+        self.ficdebgex_edit.setText(data.get('ficdebgex', ''))
+        # Ions
+        self.nbrfam_spin.setValue(data.get('nbrfam', 1))
+        self.n_total_spin.setValue(data.get('n_total', 1))
+        self.nbrion_spin.setValue(data.get('nbrion', 1))
+        self.amat_spin.setValue(data.get('amat', 100.0))
+        self.a_mass_spin.setValue(data.get('a_mass', 100.0))
+        self.qn_spin.setValue(data.get('qn', 22.0))
+        self.r0_spin.setValue(data.get('r0', 0.033))
+        self.teta0_spin.setValue(data.get('teta0', 266.9))
+        self.z0_spin.setValue(data.get('z0', 0.0))
+        self.pr0_spin.setValue(data.get('pr0', 426.28))
+        self.pz0_spin.setValue(data.get('pz0', 0.0))
+        self.w0mev_spin.setValue(data.get('w0mev', 5.665e-3))
+        self.phi0_spin.setValue(data.get('phi0', -250.0))
+        # Familles supplementaires (nbrfam_spin.setValue cree les widgets)
+        extra_fams = data.get('extra_families', [])
+        for i, fd in enumerate(extra_fams):
+            if i < len(self.extra_families):
+                self.extra_families[i].set_values(fd)
+        # Correlations
+        self.iflcor_spin.setValue(data.get('iflcor', 0))
+        self.ficsig_edit.setText(data.get('ficsig', ''))
+        self.espace_edit.setText(data.get('espace', '6d'))
+        self.ficcor_edit.setText(data.get('ficcor', 'no'))
+        self.ficmat_edit.setText(data.get('ficmat', 'no'))
+        self.ficdc_edit.setText(data.get('ficdc', 'no'))
+        # Simulation
+        self.nbdt_spin.setValue(data.get('nbdt', 350000))
+        self.ifreq_spin.setValue(data.get('ifreq', 30))
+        # Fichiers sortie
+        self.ficz_edit.setText(data.get('ficz', 'no'))
+        self.ficxy_edit.setText(data.get('ficxy', 'no'))
+        # Fichiers champs
+        self.ficb_edit.setText(data.get('ficb', ''))
+        self.ficv1_edit.setText(data.get('ficv1', ''))
+        self.ficv2_edit.setText(data.get('ficv2', ''))
+        self.b_factor_spin.setValue(data.get('b_factor', 1.0))
+        # Trieur vertical
+        self.rmin_ver.setValue(data.get('rmin_ver', 1000.0))
+        self.rmax_ver.setValue(data.get('rmax_ver', 2000.0))
+        self.teta1_ver.setValue(data.get('teta1_ver', 0.0))
+        self.teta2_ver.setValue(data.get('teta2_ver', 0.0))
+        self.pot_ver.setValue(data.get('pot_ver', 0.0))
+        self.h_ver.setValue(data.get('h_ver', 0.0))
+        self.phi_ver.setValue(data.get('phi_ver', 0.0))
+        self.anuz.setValue(data.get('anuz', 0.0))
+        self.coupnuz.setValue(data.get('coupnuz', 0.0))
+        self.dpotspot.setValue(data.get('dpotspot', 0.0))
+        # Bidim
+        self.numbid_spin.setValue(data.get('numbid', 0))
+        self.ifreb_spin.setValue(data.get('ifreb', 1))
+        self.baryc_combo.setCurrentText(data.get('baryc', 'c'))
+        self.bid_xmin.setValue(data.get('bid_xmin', -0.5))
+        self.bid_xmax.setValue(data.get('bid_xmax', 0.5))
+        self.bid_ymin.setValue(data.get('bid_ymin', -0.5))
+        self.bid_ymax.setValue(data.get('bid_ymax', 0.5))
+        self.dphi_max.setValue(data.get('dphi_max', 10.0))
+        self.dwsw_max.setValue(data.get('dwsw_max', 0.01))
+        self.dr_max.setValue(data.get('dr_max', 5.0))
+        self.dpr_max.setValue(data.get('dpr_max', 0.01))
+        self.dz_max.setValue(data.get('dz_max', 5.0))
+        self.dpz_max.setValue(data.get('dpz_max', 0.01))
+        self.itebid_spin.setValue(data.get('itebid', 1))
+        self.bary_xmin.setValue(data.get('bary_xmin', -0.2))
+        self.bary_xmax.setValue(data.get('bary_xmax', 0.2))
+        self.bary_ymin.setValue(data.get('bary_ymin', -0.2))
+        self.bary_ymax.setValue(data.get('bary_ymax', 0.2))
+        self.ficrep_edit.setText(data.get('ficrep', 'no'))
+        # Post-simulation
+        self.save_trapped_combo.setCurrentText(data.get('save_trapped', 'n'))
+        self.ficpie_edit.setText(data.get('ficpie', 'pieges.dat'))
