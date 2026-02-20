@@ -18,6 +18,10 @@
 10. [Gestion des erreurs](#10-gestion-des-erreurs)
 11. [Exemple complet d'execution](#11-exemple-complet-dexecution)
 12. [Ameliorations possibles](#12-ameliorations-possibles)
+- [Annexe A : Systemes de coordonnees](#annexe-a--systemes-de-coordonnees)
+- [Annexe B : Constantes physiques](#annexe-b--constantes-physiques)
+- [Annexe C : Formules physiques cles](#annexe-c--formules-physiques-cles)
+- [Annexe D : Distribution de particules et fichier sigma](#annexe-d--distribution-de-particules-et-fichier-sigma)
 
 ---
 
@@ -176,21 +180,29 @@ Le fichier de donnees est un fichier texte lu par `init()` en mode "list-directe
 | 5 | `dphid`, `dphig` | 2 floats | Decalage phase dee droit/gauche (deg) | Quelconque | `0 0` |
 | 6 | `pothfd`, `pothfg` | 2 floats | Potentiel dee droit/gauche (V, positif) | > 0 | `51890.d0 51890.d0` |
 | 7 | `ncoh[0]` | int | Nombre de corrections harmonique canal 0 | 0 = desactive | `0` |
-| (7b) | coefficients coh | floats | Coefficients correctifs (si ncoh[0] != 0) | | |
-| (7c) | `phihar[0]` | float | Phase harmonique canal 0 (deg) | | |
+| (7b) | `coh[0..ncoh-1, 0]` | ncoh floats | Coefficients correctifs harmonique canal 0 | si ncoh[0] != 0 | `0.001 0.002 0.003` |
+| (7c) | `phihar[0]` | float | Phase de l'harmonique canal 0 (deg) | si ncoh[0] != 0 | `45.0` |
 | 8 | `ncoh[1]` | int | Nombre de corrections harmonique canal 1 | 0 = desactive | `0` |
+| (8b) | `coh[0..ncoh-1, 1]` | ncoh floats | Coefficients correctifs harmonique canal 1 | si ncoh[1] != 0 | |
+| (8c) | `phihar[1]` | float | Phase de l'harmonique canal 1 (deg) | si ncoh[1] != 0 | |
+| (8d) | `yomega` | float | Decalage gap en biais (m) | si teta1 < 0 seulement | `0.01d0` |
 | 9 | `zmin`, `zmax`, `rmax1` | 3 floats | Limites verticales (m), rayon limite centre/peripherie (m) | zmin < zmax | `-.5d0 .5d0 .164d0` |
 | 10 | `rex`, `tet1ex`, `tet2ex`, `eex` | 4 floats | Parametres extraction | rex < 0 = extraction active | `-1. -1. -1. -1.` |
-| (10b) | `ndf` | int | Nombre de deflecteurs (si rex < 0) | 0-10 | `1` |
-| (10c) | deflecteurs | 8 floats/ligne | rdf edf xdfi ydfi xdfo ydfo tetdfi tetdfo | Par deflecteur | |
-| (10d) | `ndm` | int | Nombre de dipoles magnetiques (si rex < 0) | 0-10 | `0` |
-| (10e) | grilles | | Grilles d'extraction (si tet2ex > 0) | | |
+| (10b) | `ndf` | int | Nombre de deflecteurs electrostatiques | si rex < 0, 0-10 | `1` |
+| (10c) | deflecteurs | 8 floats/ligne | rdf edf xdfi ydfi xdfo ydfo tetdfi tetdfo (ndf lignes) | si ndf > 0 | |
+| (10d) | `ndm` | int | Nombre de dipoles magnetiques | si rex < 0, 0-10 | `0` |
+| (10d') | dipoles mag. | 6 floats/ligne | rdm bdm xdm ydm tetdmi tetdmo (ndm lignes) | si ndm > 0 | |
+| (10e) | `ngex` | int | Nombre de grilles extraction | si rex < 0 ET tet2ex > 0 | `2` |
+| (10e') | grilles | 5 floats/ligne | tetagex xgex ygex xgexc ygexc (ngex lignes, en mm) | si ngex > 0 | |
+| (10e'') | `ficdebgex` | string | Nom de base des fichiers grilles | si ngex > 0 | `grille_ext` |
 | 11 | `nbrfam` | int | Nombre de familles d'ions | 1-10 (NF max = 100) | `1` |
 | (11b) | `n` | int | N total particules (si nbrfam > 1) | | |
 | 12 | `nbrion`, `amat`, `a_mass`, `qn` | int + 3 floats | Par famille : nb ions, masse atomique (uma), nombre de masse, charge | | `1 100.36496d0 100.36496d0 22.d0` |
 | 13 | `r0`, `teta0`, `z0`, `pr0`, `pz0`, `w0mev`, `phi0` | 7 floats | Conditions initiales : rayon (m), angle (deg), z (m), pr (mrad), pz (mrad), energie (MeV/A), phase HF (deg) | | `0.033 266.9 0.d0 426.28 0.d0 5.665d-3 -250.d0` |
 | 14 | `iflcor` | int | Flag correlations | 0 = desactive | `0` |
-| (14b) | fichiers correl | strings | ficsig, espace, ficcor, ficmat, ficdc (si iflcor != 0) | | |
+| (14b) | `ficsig` | string | Fichier matrice sigma (si iflcor != 0) | chemin du fichier | `sigma6d.dat` |
+| (14b') | `espace` | string | Type espace de phase | "6d" ou "3d" | `6d` |
+| (14b'') | `ficcor`, `ficmat`, `ficdc` | 3 strings | Fichiers sortie correlations, matrice, dc ("no" = desactive) | sur 1 ligne | `correl.dat matrice.dat no` |
 | 15 | `nbdt`, `ifreq` | 2 ints | Nombre de pas de temps, frequence d'affichage | nbdt > 0, ifreq > 0 | `350000 30` |
 | 16 | `ficz` | string | Fichier sortie z ("no" = desactive) | | `exp.for.z.ref_phi10_mars_2017` |
 | 17 | `ficxy` | string | Fichier sortie xy ("no" = desactive) | | `exp.for.ref_phi10_mars_2017` |
@@ -198,6 +210,117 @@ Le fichier de donnees est un fichier texte lu par `init()` en mode "list-directe
 | 19 | `ficv1` | string (quote) | Potentiel region centrale | | `'pot3d.impair.30pilbleu30.620.dat'` |
 | 20 | `ficv2` | string (quote) | Potentiel region peripherique | | `'newgap612.dat'` |
 | 21 | `b_factor` | float | Facteur B en Tesla (optionnel, defaut 1.0) | | `1.56d0` |
+
+#### Detail des lignes conditionnelles
+
+**Ligne 7 - Corrections harmoniques canal 0 (`ncoh[0]`)**
+
+Le canal 0 correspond a l'harmonique 1 (dipole). `ncoh[0]` donne le nombre de coefficients de Fourier correctifs. Si `ncoh[0] = 0`, les lignes 7b et 7c sont absentes du fichier.
+
+Si `ncoh[0] != 0` :
+- Ligne 7b : les `ncoh[0]` coefficients `coh[i, 0]` sur une seule ligne, separes par des espaces. Ces coefficients modulent la composante radiale du champ electrique dans `addh()` via un developpement de Fourier-Bessel (harmonique 1).
+- Ligne 7c : la phase `phihar[0]` en degres. Dephasage de la correction harmonique par rapport a la phase HF principale.
+
+Dans `addh()`, la correction est appliquee comme : `Er += coh * I1(k*r) * cos(theta + phihar)` ou I1 est la fonction de Bessel modifiee d'ordre 1.
+
+**Ligne 8 - Corrections harmoniques canal 1 (`ncoh[1]`)**
+
+Identique au canal 0 mais pour l'harmonique 2 (quadrupole). Si `ncoh[1] != 0` :
+- Ligne 8b : les `ncoh[1]` coefficients `coh[i, 1]` sur une seule ligne.
+- Ligne 8c : la phase `phihar[1]` en degres.
+
+Dans `addh()`, la correction quadrupolaire utilise : `Er += coh * I2(k*r) * cos(2*theta + phihar)` ou I2 est la fonction de Bessel modifiee d'ordre 2.
+
+**Ligne 8d - Gap en biais (`yomega`) - CONDITIONNEL**
+
+Cette ligne n'est lue que si `teta1 < 0` dans la ligne 4 (demi-ouverture dee negative). C'est un cas special ou le gap d'acceleration n'est pas radial mais incline. `teta1` est alors remis positif et `yomega` donne le decalage transversal du gap (en metres). Si `teta1 >= 0`, cette ligne n'existe pas dans le fichier.
+
+**Ligne 9 - Geometrie verticale (`zmin`, `zmax`, `rmax1`)**
+
+- `zmin`, `zmax` : limites verticales de la boite de simulation en metres. Une particule dont z sort de [zmin, zmax] est consideree perdue (piegee verticalement). Valeurs typiques : -0.5 a +0.5 m.
+- `rmax1` : rayon de transition centre/peripherie en metres. Quand r < rmax1, le code utilise la carte de potentiel `ficv1` (region centrale). Quand r >= rmax1, il utilise `ficv2` (region peripherique avec gap). Valeur typique : 0.164 m pour CIME.
+
+**Ligne 10 - Extraction (`rex`, `tet1ex`, `tet2ex`, `eex`)**
+
+- `rex` : rayon d'extraction. Si `rex >= 0` : pas d'extraction (simulation pure acceleration). Si `rex < 0` : extraction active, le code lit les deflecteurs (10b-10e).
+- `tet1ex` : mode de coupure du paquet. Si `tet1ex <= 0` : le paquet sera coupe (les ions sortent des qu'ils atteignent rex). Si `tet1ex > 0` : le paquet sera entier (on attend `iteext = int(tet1ex)` pas avant de commencer l'extraction).
+- `tet2ex` : si `tet2ex > 0` et `rex < 0`, des grilles d'extraction sont definies (lignes 10e).
+- `eex` : si `tet2ex > 0`, `itegex = int(eex)` donne le pas de demarrage des grilles.
+
+Apres la lecture, les angles sont convertis en radians : `tet1ex *= pi/180`, `tet2ex *= pi/180`.
+
+**Ligne 10b - Deflecteurs electrostatiques (`ndf`) - si rex < 0**
+
+Nombre de deflecteurs electrostatiques pour l'extraction. Chaque deflecteur est un canal courbe entre deux demi-plans definis par des points et des angles.
+
+**Ligne 10c - Parametres deflecteurs (ndf lignes) - si ndf > 0**
+
+Pour chaque deflecteur i, une ligne contient 8 valeurs :
+- `rdf[i]` : rayon du deflecteur (m). Definit l'arc interieur.
+- `edf[i]` : champ electrique du deflecteur (V/m). Force radiale appliquee aux ions.
+- `xdfi[i]`, `ydfi[i]` : coordonnees du point de reference de la paroi d'entree (m).
+- `xdfo[i]`, `ydfo[i]` : coordonnees du point de reference de la paroi de sortie (m).
+- `tetdfi[i]` : angle de la paroi d'entree (deg, converti en rad). Definit la normale du demi-plan d'entree via `uxdfi = cos(tetdfi)`, `uydfi = sin(tetdfi)`.
+- `tetdfo[i]` : angle de la paroi de sortie (deg, converti en rad). Definit la normale du demi-plan de sortie via `uxdfo = cos(tetdfo)`, `uydfo = sin(tetdfo)`.
+
+Le test d'appartenance au deflecteur utilise `boxdf()` qui verifie que la particule est entre les deux demi-plans (produit vectoriel) et au-dela du rayon rdf.
+
+**Ligne 10d - Dipoles magnetiques (`ndm`) - si rex < 0**
+
+Nombre de dipoles magnetiques pour la correction de trajectoire a l'extraction.
+
+**Ligne 10d' - Parametres dipoles (ndm lignes) - si ndm > 0**
+
+Pour chaque dipole i, une ligne contient 6 valeurs :
+- `rdm[i]` : rayon du dipole (m).
+- `bdm[i]` : champ magnetique du dipole (T). Ajoute au champ Bz local.
+- `xdm[i]`, `ydm[i]` : coordonnees du point de reference (m).
+- `tetdmi[i]` : angle de la paroi d'entree (deg, converti en rad).
+- `tetdmo[i]` : angle de la paroi de sortie (deg, converti en rad).
+
+Le test d'appartenance utilise `boxdm()` (meme logique que `boxdf()`).
+
+**Ligne 10e - Grilles d'extraction (`ngex`) - si rex < 0 ET tet2ex > 0**
+
+Nombre de grilles d'extraction. Les grilles sont des surfaces planes qui interceptent les ions extraits. A chaque passage a travers une grille, les coordonnees de la particule sont enregistrees dans un fichier.
+
+**Ligne 10e' - Parametres grilles (ngex lignes) - si ngex > 0**
+
+Pour chaque grille kg, une ligne contient 5 valeurs en **millimetres** (converties en metres a la lecture par /1000) :
+- `tetagex[kg]` : angle de reference de la grille (deg, PAS converti en rad).
+- `xgex[kg]`, `ygex[kg]` : coordonnees du point de la grille (mm -> m).
+- `xgexc[kg]`, `ygexc[kg]` : coordonnees du centre de la grille (mm -> m).
+
+Le code calcule automatiquement le vecteur unitaire de la grille : `uxgex = (xgex - xgexc) / drgex`, `uygex = (ygex - ygexc) / drgex` ou `drgex = distance(gex, gexc)`. Le test de passage utilise `boxgex()`.
+
+**Ligne 10e'' - Nom de base des fichiers grilles (`ficdebgex`)**
+
+Chaine de caracteres. Les fichiers de sortie sont nommes `ficdebgex.1`, `ficdebgex.2`, etc. (un par grille). Chaque fichier contient les coordonnees des ions au passage de la grille.
+
+**Ligne 14 - Correlations (`iflcor`)**
+
+Flag pour activer le chargement d'un paquet d'ions correles a partir d'une matrice sigma 6D. Si `iflcor = 0`, les lignes 14b sont absentes. Si `iflcor != 0`, le code lit la matrice sigma, genere un paquet d'ions correles via decomposition de Cholesky, et distribue les particules dans l'espace de phase 6D (r, pr, z, pz, dphi, dW).
+
+**Ligne 14b - Fichier sigma (`ficsig`)**
+
+Chemin du fichier contenant la matrice sigma 6x6 (ou 3x3 si espace = "3d"). Le fichier contient les elements de la matrice triangulaire superieure : sigmas RMS des 6 coordonnees puis les coefficients de correlation. Le code lit ces valeurs et reconstruit la matrice sigma complete.
+
+**Ligne 14b' - Type d'espace de phase (`espace`)**
+
+- `"6d"` : espace de phase complet 6D (r, pr, z, pz, dphi, dW). Toutes les 6 coordonnees sont distribuees.
+- `"3d"` : espace de phase 3D reduit (r, pr seulement, ou r, pr, z, pz). Les coordonnees z et pz ne sont pas modifiees par les correlations.
+
+**Ligne 14b'' - Fichiers de sortie correlations (`ficcor`, `ficmat`, `ficdc`)**
+
+Trois noms de fichiers sur une seule ligne, separes par des espaces. Chacun peut etre `"no"` pour desactiver :
+- `ficcor` : fichier de sortie des correlations (unite 17). Ecrit a chaque appel de `info()` : tour, rayon, theta, dr, ds, dphi, emittance r, dW/W, W (MeV/A), dW, dW*dphi, dz, emittance z.
+- `ficmat` : fichier de sortie de la matrice sigma (unite 18). Ecrit la matrice sigma 6x6 complete a chaque appel de `info()`.
+- `ficdc` : fichier de sortie des correlations "dc" (unite 19). Meme format que ficcor mais pour les valeurs DC (sans soustraction de la moyenne).
+
+**Ligne 15 - Simulation (`nbdt`, `ifreq`)**
+
+- `nbdt` : nombre total de pas de temps de la simulation. C'est le nombre d'iterations de la boucle principale. Le temps physique total est `T = nbdt * dt` ou `dt = harm / (fhf * npaspt)`. Exemple : avec fhf = 14.4 MHz, harm = 3, npaspt = 1080, on a dt = 1.929e-10 s. Pour 350000 pas : T = 67.5 microsecondes soit environ 250 tours.
+- `ifreq` : frequence d'affichage des informations. Tous les `ifreq` pas, la fonction `info()` est appelee : elle calcule et affiche les coordonnees, l'energie, la phase, les emittances, et ecrit dans les fichiers de sortie. Valeur typique : 30 (= affichage tous les 30 pas, soit environ une fois par tour si npaspt/harm = 360).
 
 ### 4.2 Carte de champ magnetique
 
@@ -1598,14 +1721,80 @@ Les plots GUI montrent :
 - Transformation : `x' = |X|*cos(teta1) + (|Y| - yomega)*sin(teta1)`
 - Rotation inverse pour le champ electrique
 
-### Espace de phase
-- **(dr, dpr, dz, dpz, ds, dp)** : Coordonnees curvilignes par rapport a la particule centrale
-  - dr : ecart radial
-  - dpr : ecart d'impulsion radiale
-  - dz : ecart vertical
-  - dpz : ecart d'impulsion verticale
-  - ds : ecart le long de l'orbite
-  - dp : ecart d'impulsion totale
+### Espace de phase a 6 dimensions
+
+Les coordonnees de l'espace de phase sont definies dans le repere curviligne de la particule centrale (famille k=0). Elles correspondent au tableau `dxs[0..5]` calcule par `caldxs()`.
+
+L'espace de phase 6D est structure en **3 plans conjugues** (position, impulsion) :
+
+```
+         position (m)    impulsion (beta*gamma)
+        +---------------+----------------------+
+plan r  |  dr  (dxs[0]) |  ds   (dxs[1])       |  plan radial
+        +---------------+----------------------+
+plan z  |  dz  (dxs[2]) |  dpz  (dxs[3])       |  plan vertical
+        +---------------+----------------------+
+plan phi|  dphi (dxs[4])|  dp   (dxs[5])       |  plan longitudinal
+        +---------------+----------------------+
+```
+
+| Indice | Symbole | Grandeur | Unite | Description |
+|--------|---------|----------|-------|-------------|
+| dxs[0] | dr | ecart radial | m | Distance radiale par rapport a l'orbite de reference |
+| dxs[1] | ds (dpr) | ecart impulsion radiale | sans dimension (beta*gamma) | Composante radiale de l'impulsion normalisee |
+| dxs[2] | dz | ecart vertical | m | Distance verticale par rapport au plan median |
+| dxs[3] | dpz | ecart impulsion verticale | sans dimension (beta*gamma) | Composante verticale de l'impulsion normalisee |
+| dxs[4] | dphi | ecart en phase (arc) | m | **Longueur d'arc** le long de l'orbite de reference |
+| dxs[5] | dp | ecart impulsion totale | sans dimension (beta*gamma) | Ecart du module de l'impulsion normalisee |
+
+#### Pourquoi les positions sont en metres (m)
+
+- **dr** = ecart radial par rapport a la particule de reference, en metres. Exemple : dr = +0.1 mm = 1e-4 m signifie que l'ion est 0.1 mm plus loin du centre que la reference.
+- **dz** = ecart vertical par rapport au plan median, en metres.
+- **dphi** n'est **pas un angle en degres** mais une **longueur d'arc** en metres : `dphi (m) = R * delta_phi (rad)`. Exemple a l'injection (R = 33 mm) : dphi = 0.1 mm correspond a un decalage angulaire de `0.1 / 33 = 0.003 rad = 0.17 deg`.
+
+Les 3 coordonnees de position sont en metres pour que la matrice de covariance soit dimensionnellement coherente et que les invariants de Liouville (emittance) aient un sens physique.
+
+#### Pourquoi les impulsions sont en beta*gamma (sans dimension)
+
+En mecanique relativiste, l'impulsion d'une particule est :
+
+```
+p_vect = m0 * c * beta_vect * gamma
+```
+
+ou :
+- `m0` = masse au repos
+- `c` = vitesse de la lumiere
+- `beta = v/c` (rapport de la vitesse a la vitesse de la lumiere)
+- `gamma = 1/sqrt(1 - beta^2)` (facteur de Lorentz)
+
+Le produit **beta*gamma = p / (m0*c)** est l'impulsion **normalisee**, sans dimension. C'est la convention standard en physique des accelerateurs car :
+
+1. C'est **adimensionnel** : pas d'unite a gerer
+2. C'est **universel** : independant de la masse de la particule
+3. C'est **direct** dans les equations du mouvement relativiste
+4. La rigidite magnetique est `B*rho = m0*c * beta*gamma / q`
+
+Les composantes `px`, `py`, `pz` dans LIONS sont les projections du vecteur beta*gamma sur les axes X, Y, Z. La norme `|p| = sqrt(px^2 + py^2 + pz^2) = beta*gamma_total`.
+
+#### Conversion beta*gamma -> mrad (dans les plots)
+
+Sur les plots de l'espace de phase (Z-Pz), l'impulsion est affichee en **milliradians** (mrad) pour plus d'intuition. La conversion est :
+
+```
+pz_angle (mrad) = arcsin(pz / |p_total|) * 1000
+```
+
+Pour un faisceau quasi-horizontal (pz << |p_total|), c'est approximativement : `pz_angle (mrad) ~= (pz / |p_total|) * 1000`.
+
+Exemple numerique pour un ion (A=100, Q=22, W=0.27 MeV/A) :
+- beta*gamma_total ~= 0.024
+- Si sigma_dpz = 3.16e-6 (beta*gamma), la divergence angulaire est : sigma_angle = 3.16e-6 / 0.024 ~= 0.13 mrad
+
+#### Note sur dphi (dxs[4])
+
+Malgre son nom, dphi n'est **pas un angle en radians** mais une **longueur d'arc en metres**. C'est la convention standard des codes cyclotron : `s = rc * phi_angle`. Pour obtenir l'angle en radians, il faut diviser par le rayon de courbure : `phi_angle = dxs[4] / rc`. C'est exactement ce que fait le code dans `caldxs()` avec `cos(dxs[4]/rc)` et `sin(dxs[4]/rc)`.
 
 ## Annexe B : Constantes physiques
 
@@ -1646,6 +1835,309 @@ m0 = uma * (A_atomique - 0.0005486 * Q)
 ```
 dt = harm / (fhf * npaspt)
 ```
+
+## Annexe D : Distribution de particules et fichier sigma
+
+### D.1 Principe general
+
+Pour simuler un faisceau realiste (plusieurs particules), LIONS utilise une distribution dans l'espace de phase 6D. Le mecanisme est controle par le parametre `iflcor` dans le fichier de donnees :
+
+- `iflcor = 0` : **Pas de distribution**. Les particules supplementaires (si `nbrion > 1`) sont placees exactement aux memes coordonnees que la particule centrale.
+- `iflcor != 0` : **Distribution activee**. Les particules sont reparties autour de la particule centrale selon une matrice de covariance (sigma) lue depuis un fichier.
+
+### D.2 Parametres dans le fichier de donnees
+
+Quand `iflcor != 0`, le fichier de donnees contient apres le bloc des ions :
+
+```
+iflcor                          (entier, != 0 pour activer)
+ficsig                          (nom du fichier sigma, ex: 'sigma6d.dat')
+espace                          (type d'espace : '6d' ou '3d')
+ficcor                          (fichier sortie correlations, 'no' = desactive)
+ficmat                          (fichier sortie matrice, 'no' = desactive)
+ficdc                           (fichier sortie correlations decouplees, 'no' = desactive)
+```
+
+### D.3 Le fichier sigma
+
+Le fichier sigma contient une **matrice de covariance 6x6** (ou 4x4 si espace='3d') qui definit les dispersions et les correlations entre les coordonnees de l'espace de phase.
+
+#### Format
+
+Le fichier est lu par `FortranFile` : 6 lignes de 6 valeurs (notation Fortran avec `d` pour l'exposant), formant la matrice symetrique :
+
+```
+sigma(dr,dr)      sigma(dr,ds)      sigma(dr,dz)      sigma(dr,dpz)     sigma(dr,dphi)    sigma(dr,dp)
+sigma(ds,dr)      sigma(ds,ds)      sigma(ds,dz)      sigma(ds,dpz)     sigma(ds,dphi)    sigma(ds,dp)
+sigma(dz,dr)      sigma(dz,ds)      sigma(dz,dz)      sigma(dz,dpz)     sigma(dz,dphi)    sigma(dz,dp)
+sigma(dpz,dr)     sigma(dpz,ds)     sigma(dpz,dz)     sigma(dpz,dpz)    sigma(dpz,dphi)   sigma(dpz,dp)
+sigma(dphi,dr)    sigma(dphi,ds)    sigma(dphi,dz)    sigma(dphi,dpz)   sigma(dphi,dphi)  sigma(dphi,dp)
+sigma(dp,dr)      sigma(dp,ds)      sigma(dp,dz)      sigma(dp,dpz)     sigma(dp,dphi)    sigma(dp,dp)
+```
+
+L'ordre des coordonnees est : **(dr, ds, dz, dpz, dphi, dp)** correspondant a `dxs[0..5]`.
+
+#### Unites des elements sigma
+
+Les unites de chaque element `sigma(i,j)` sont le **produit des unites** des coordonnees i et j :
+
+| Coordonnee | Unite | Description |
+|------------|-------|-------------|
+| dr (dxs[0]) | m | Ecart radial |
+| ds (dxs[1]) | sans dim. (beta*gamma) | Impulsion radiale normalisee |
+| dz (dxs[2]) | m | Ecart vertical |
+| dpz (dxs[3]) | sans dim. (beta*gamma) | Impulsion verticale normalisee |
+| dphi (dxs[4]) | m | **Longueur d'arc** (pas un angle !) |
+| dp (dxs[5]) | sans dim. (beta*gamma) | Impulsion totale normalisee |
+
+Par exemple :
+- `sigma(dr, dr)` est en m^2 (variance de la position radiale)
+- `sigma(dr, ds)` est en m (correlation position-impulsion radiales, car ds est sans dimension)
+- `sigma(dphi, dphi)` est en m^2 (variance de la longueur d'arc)
+
+#### Relation entre sigma^2 (fichier) et sigma (GUI)
+
+Le fichier sigma contient les **variances** (sigma^2). La GUI affiche les **ecarts-types** (sigma) en unites pratiques :
+
+| Fichier (variance) | GUI (ecart-type) | Conversion |
+|---------------------|-------------------|------------|
+| sigma^2_dr = 1e-8 m^2 | sigma_dr = 0.1 mm | sigma_mm = sqrt(sigma^2) * 1000 |
+| sigma^2_ds = 1e-11 (bg)^2 | sigma_ds = 3.16e-6 (bg) | sigma = sqrt(sigma^2) |
+| sigma^2_dz = 1e-8 m^2 | sigma_dz = 0.1 mm | idem positions |
+| sigma^2_dpz = 1e-11 (bg)^2 | sigma_dpz = 3.16e-6 (bg) | idem impulsions |
+| sigma^2_dphi = 1e-8 m^2 | sigma_dphi = 0.1 mm | idem positions |
+| sigma^2_dp = 1e-11 (bg)^2 | sigma_dp = 3.16e-6 (bg) | idem impulsions |
+
+L'ecriture du fichier fait la conversion inverse : `sigma^2 (m^2) = (sigma_mm * 1e-3)^2`.
+
+### D.4 Matrice diagonale = pas de correlations
+
+Si les particules du faisceau sont **independantes** (pas de correlations entre les plans), la matrice sigma est **diagonale** : seuls les termes sur la diagonale sont non nuls.
+
+#### Exemple : faisceau sans correlations
+
+```
+1.0d-6   0.0d0    0.0d0    0.0d0    0.0d0    0.0d0
+0.0d0    1.0d-6   0.0d0    0.0d0    0.0d0    0.0d0
+0.0d0    0.0d0    1.0d-6   0.0d0    0.0d0    0.0d0
+0.0d0    0.0d0    0.0d0    1.0d-6   0.0d0    0.0d0
+0.0d0    0.0d0    0.0d0    0.0d0    1.0d-6   0.0d0
+0.0d0    0.0d0    0.0d0    0.0d0    0.0d0    1.0d-6
+```
+
+Les valeurs diagonales representent les **variances** (dispersion^2) de chaque coordonnee. La racine carree donne la dispersion RMS :
+- `sigma(dr,dr) = 1e-6 m^2` -> dispersion radiale RMS = 1 mm
+- `sigma(dphi,dphi) = 1e-6 m^2` -> dispersion en arc RMS = 1 mm
+
+### D.5 Algorithme de generation (remp + Cholesky)
+
+#### Principe mathematique
+
+Le but est de generer N ions distribues selon une matrice de covariance Sigma a partir de nombres aleatoires independants. La **decomposition de Cholesky** permet de trouver une matrice triangulaire inferieure L telle que :
+
+```
+L * L^T = Sigma       (propriete fondamentale)
+```
+
+Si **z** est un vecteur aleatoire de covariance I (identite, composantes independantes), alors le vecteur transforme `x = L^T * z` a exactement la covariance souhaitee :
+
+```
+Cov(L^T * z) = L^T * Cov(z) * L = L^T * I * L = L^T * L = Sigma
+```
+
+#### Illustration geometrique (2D)
+
+```
+Sans correlation (Sigma diagonale)     Avec correlation (Sigma pleine)
+
+    pr                                  pr
+    |                                   |    /
+    | ooo                               |  /ooo
+    |oo.oo                              | oo.oo/
+    | ooo                               |/ooo
+    +---------> r                       +---------> r
+
+  Cercle (sigma_r = sigma_pr)       Ellipse inclinee
+  ou ellipse droite                  cov(r,pr) != 0
+```
+
+La matrice L "deforme" le cercle en ellipse selon les correlations souhaitees.
+
+#### Algorithme detaille (4 etapes)
+
+**Etape 1 : Echantillonnage uniforme dans l'hyper-sphere** (`remp()`)
+
+```
+Pour chaque particule k = 1..n_part :
+    Repeter :
+        vtab[j] = 2*random() - 1      pour j = 0..5
+    Jusqu'a : SUM(vtab[j]^2) <= 1      (rejet si hors hyper-sphere)
+    ps[:,k] = vtab
+```
+
+Le tirage est reproductible grace a `seed(42)`.
+
+**Etape 2 : Decorrelation de l'echantillon**
+
+L'echantillon brut possede des correlations statistiques. On les elimine :
+```
+C[i,j] = (1/N) * SUM_k( ps[i,k] * ps[j,k] )    (matrice de covariance echantillon)
+R = choles(6, C)                                   (decomposition de Cholesky)
+T = R^T                                            (triangulaire inferieure)
+ps = T^{-1} * ps                                   (substitution avant)
+```
+
+Apres cette etape, l'echantillon est uniformement distribue et decorrele (covariance = I).
+
+**Etape 3 : Application de la matrice sigma** (dans `init()`)
+
+```
+sigma_lu = lecture du fichier sigma (6x6)
+R_sigma = choles(6, sigma_lu)                      (Cholesky de sigma)
+dxs[:,k] = R_sigma^T * ps[:,k]                     (pour chaque particule)
+```
+
+Les particules sont maintenant distribuees selon la matrice sigma souhaitee. Cela fonctionne parce que `Cov(R_sigma^T * ps) = R_sigma^T * I * R_sigma = sigma_lu`.
+
+**Cas particulier : matrice diagonale** (pas de correlations)
+
+Si Sigma est diagonale, la decomposition de Cholesky donne simplement :
+```
+L[i,i] = sqrt(Sigma[i,i]) = sigma_i
+```
+Et la transformation se reduit a un simple produit scalaire :
+```
+dxs[i,k] = sigma_i * ps[i,k]
+```
+Chaque ion est decale de +/- sigma autour de la reference dans chaque dimension, independamment des autres dimensions.
+
+**Etape 4 : Placement des particules**
+
+Les coordonnees curvilignes `dxs` sont converties en coordonnees cartesiennes (x, y, z, px, py, pz) a partir de la position de la particule centrale et du rayon de courbure `rc` :
+
+```python
+# Rotation de dphi (arc -> angle) autour de l'orbite de reference
+cos_phi = cos(dxs[4] / rc)
+sin_phi = sin(dxs[4] / rc)
+
+# Position dans le plan (X, Y) :
+x[k] = x_ref + dr*cos(theta) - (rc + dr)*sin(dphi/rc)*sin(alpha)
+y[k] = y_ref + dr*sin(theta) + (rc + dr)*sin(dphi/rc)*cos(alpha)
+
+# Position verticale :
+z[k] = z_ref + dz
+
+# Impulsions :
+px[k], py[k] = rotation_2D(ds, dp, theta, dphi/rc)
+pz[k] = pz_ref + dpz
+```
+
+### D.6 Le rayon de courbure rc
+
+Le rayon de courbure `rc` est essentiel pour convertir dphi (arc en metres) en angle et pour placer les particules. Il est calcule par :
+
+```
+rc = -am0c * p / (q * Bz)
+```
+
+Ou :
+- `am0c = m0 * c` : masse au repos * vitesse de la lumiere
+  - `m0 = 1.6605402e-27 * (A_atomique - 0.0005486 * Q)` en kg
+  - `c = 299792458` m/s
+- `p = sqrt(gamma^2 - 1) = beta * gamma` : impulsion normalisee (sans dimension)
+- `q = Q * 1.60217733e-19` : charge en Coulombs
+- `Bz` : champ magnetique vertical en Tesla
+
+Le rayon de courbure est en **metres** et son signe depend du signe de Bz (negatif dans LIONS car le champ pointe vers le bas dans un cyclotron standard).
+
+### D.7 Conversion dphi -> angle
+
+La longueur d'arc dphi est convertie en angle par la relation geometrique :
+
+```
+phi_angle (radians) = dphi / rc = dxs[4] / rc
+```
+
+Cette conversion est utilisee dans `caldxs()` pour placer les particules sur l'orbite de reference :
+```python
+x[k] = x_ref + dr*cos(theta_ref) - (rc + dr)*sin(dphi/rc)*sin(alpha)
+y[k] = y_ref + dr*sin(theta_ref) + (rc + dr)*sin(dphi/rc)*cos(alpha)
+```
+
+Et dans `info()` pour calculer les correlations en espace de phase.
+
+### D.8 Mode 3D vs 6D
+
+Le parametre `espace` controle la dimensionnalite :
+
+- `'6d'` : Distribution complete dans les 6 dimensions (dr, ds, dz, dpz, dphi, dp). La matrice sigma est 6x6.
+- `'3d'` : Distribution uniquement dans le plan (r, pr) et (phi, dp). La matrice sigma est 4x4 :
+
+```
+sigma(dr,dr)      sigma(dr,ds)      sigma(dr,dphi)    sigma(dr,dp)
+sigma(ds,dr)      sigma(ds,ds)      sigma(ds,dphi)    sigma(ds,dp)
+sigma(dphi,dr)    sigma(dphi,ds)    sigma(dphi,dphi)  sigma(dphi,dp)
+sigma(dp,dr)      sigma(dp,ds)      sigma(dp,dphi)    sigma(dp,dp)
+```
+
+En mode 3D, les coordonnees z et pz ne sont pas distribuees (dz = dpz = 0).
+
+### D.9 Configuration dans la GUI
+
+Dans l'interface graphique LIONS :
+
+1. **Nombre d'ions** (`nbrion`) : Mettre un nombre > 1 (ex: 100, 1000)
+2. **Section Correlations** : Activer `iflcor != 0`
+3. **Fichier sigma** : Selectionner ou creer un fichier sigma (6x6 ou 4x4)
+4. **Espace** : Choisir '6d' ou '3d'
+5. **Fichiers de sortie** (optionnels) : ficcor, ficmat, ficdc pour l'analyse post-simulation
+6. **Section Bidim** : Si `numbid != 0`, les bidims incluront les correlations dphi-dW/W, dr-dpr/p0, dz-dpz/p0
+
+#### Champs sigma diagonaux (sans correlation)
+
+La GUI offre 6 champs pour saisir directement les ecarts-types (sigma) de la diagonale, dans des unites pratiques :
+
+| Champ GUI | Description | Unite GUI | Defaut | Conversion fichier |
+|-----------|-------------|-----------|--------|---------------------|
+| sigma dr | Dispersion radiale | mm | 0.1 | sigma^2 = (val * 1e-3)^2 m^2 |
+| sigma ds | Dispersion impulsion radiale | beta*gamma | 3.16e-6 | sigma^2 = val^2 |
+| sigma dz | Dispersion verticale | mm | 0.1 | sigma^2 = (val * 1e-3)^2 m^2 |
+| sigma dpz | Dispersion impulsion verticale | beta*gamma | 3.16e-6 | sigma^2 = val^2 |
+| sigma dphi | Dispersion en phase (arc) | mm | 0.1 | sigma^2 = (val * 1e-3)^2 m^2 |
+| sigma dp | Dispersion impulsion totale | beta*gamma | 3.16e-6 | sigma^2 = val^2 |
+
+Le bouton **"Appliquer -> fichier sigma"** ecrit ces valeurs dans le fichier sigma (matrice 6x6 diagonale). Le fichier est aussi genere automatiquement a chaque lancement de simulation (Run).
+
+Quand un fichier de donnees est charge (avec iflcor != 0), les valeurs diagonales du fichier sigma sont automatiquement lues et converties : `sigma_mm = sqrt(sigma^2_fichier) * 1000`.
+
+#### Exemple pratique
+
+Pour un faisceau avec :
+- Dispersion radiale de 0.5 mm
+- Dispersion verticale de 0.2 mm
+- Dispersion en arc de 0.3 mm
+- Pas de dispersion en impulsion
+
+Entrer dans la GUI :
+```
+sigma dr   = 0.5       (mm)
+sigma ds   = 0.0       (beta*gamma)
+sigma dz   = 0.2       (mm)
+sigma dpz  = 0.0       (beta*gamma)
+sigma dphi = 0.3       (mm)
+sigma dp   = 0.0       (beta*gamma)
+```
+
+Le fichier sigma genere contiendra :
+```
+2.5d-7   0.d0     0.d0     0.d0     0.d0     0.d0
+0.d0     0.d0     0.d0     0.d0     0.d0     0.d0
+0.d0     0.d0     4.0d-8   0.d0     0.d0     0.d0
+0.d0     0.d0     0.d0     0.d0     0.d0     0.d0
+0.d0     0.d0     0.d0     0.d0     9.0d-8   0.d0
+0.d0     0.d0     0.d0     0.d0     0.d0     0.d0
+```
+(car 0.5mm^2 = 2.5e-7 m^2, 0.2mm^2 = 4e-8 m^2, 0.3mm^2 = 9e-8 m^2)
 
 ---
 

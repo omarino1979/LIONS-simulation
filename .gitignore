@@ -1,22 +1,26 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
-*.pdf
-*.png
-*.jpg
-*.svg
-_lions_gui_temp.*
-.claude/
 
-# Fichiers de donnees binaires (trop volumineux pour git)
-*.dat
+# Fichiers temporaires GUI
+_lions_gui_temp.dat
+
+# Fichiers temporaires Office
+~$*.docx
+
+# Fichiers bidim (generes par simulation)
 *.bid
+
+# Fichiers HTML generes
+lions_3d.html
+
+# Fichiers nul/oui (artefacts)
 nul
+oui
 
-# Documents Office (optionnel - a retirer si vous voulez les inclure)
-*.docx
-*.pptx
+# Images captures (screenshots)
+*.png
 
-# Resultats de simulation
-exp.for.*
-pdf_pages/
+# PDF genere
+lions_programme.pdf

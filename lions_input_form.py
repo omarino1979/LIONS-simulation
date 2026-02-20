@@ -448,6 +448,36 @@ class InputFormPanel(QWidget):
         cor_lay.addRow("Fichier sigma :", w_ficsig)
         self.espace_edit = QLineEdit('6d')
         cor_lay.addRow("Espace de phase :", self.espace_edit)
+
+        # --- Sigma diagonaux (sans correlation) ---
+        sep_sig = QFrame()
+        sep_sig.setFrameShape(QFrame.HLine)
+        cor_lay.addRow(sep_sig)
+        lbl_sig = QLabel("\u03c3 diagonaux (sans corr.) :")
+        lbl_sig.setStyleSheet("font-weight: bold;")
+        cor_lay.addRow(lbl_sig)
+        self.sig_dr = _make_double_spin(0.1, 0.0, 1000.0, decimals=6)
+        self.sig_ds = _make_double_spin(1.0, 0.0, 1e6, decimals=6)
+        self.sig_dz = _make_double_spin(0.1, 0.0, 1000.0, decimals=6)
+        self.sig_dpz = _make_double_spin(1.0, 0.0, 1e6, decimals=6)
+        self.sig_dphi = _make_double_spin(0.1, 0.0, 1000.0, decimals=6)
+        self.sig_dp = _make_double_spin(1.0, 0.0, 1e6, decimals=6)
+        cor_lay.addRow(u"\u03c3 dr (mm) :", self.sig_dr)
+        cor_lay.addRow(u"\u03c3 ds (mrad) :", self.sig_ds)
+        cor_lay.addRow(u"\u03c3 dz (mm) :", self.sig_dz)
+        cor_lay.addRow(u"\u03c3 dpz (mrad) :", self.sig_dpz)
+        cor_lay.addRow(u"\u03c3 d\u03c6 (mm) :", self.sig_dphi)
+        cor_lay.addRow(u"\u03c3 dp (mrad) :", self.sig_dp)
+        btn_apply_sig = QPushButton("Appliquer \u2192 fichier sigma")
+        btn_apply_sig.setToolTip(
+            "Ecrit les valeurs diagonales dans le fichier sigma "
+            "(ecrase le fichier existant)")
+        btn_apply_sig.clicked.connect(self._write_sigma_from_gui)
+        cor_lay.addRow("", btn_apply_sig)
+
+        sep_sig2 = QFrame()
+        sep_sig2.setFrameShape(QFrame.HLine)
+        cor_lay.addRow(sep_sig2)
         self.ficcor_edit = QLineEdit('no')
         cor_lay.addRow("Fichier correl :", self.ficcor_edit)
         self.ficmat_edit = QLineEdit('no')
@@ -699,6 +729,121 @@ class InputFormPanel(QWidget):
         path, _ = QFileDialog.getSaveFileName(self, "Fichier pieges")
         if path:
             self.ficpie_edit.setText(path)
+
+    def _compute_betagamma(self):
+        """Calcule beta*gamma total a partir des parametres ion (amat, qn, w0mev).
+
+        Retourne bg_total = sqrt(gamma^2 - 1), ou 0.0 si le calcul echoue.
+        Meme formule que lions.py init() lignes 1237-1245.
+        """
+        try:
+            amat = self.amat_spin.value()
+            qn = self.qn_spin.value()
+            w0mev = self.w0mev_spin.value()
+            if amat <= 0 or w0mev <= 0:
+                return 0.0
+            clum = 299792458.0
+            am0 = 1.6605402e-27 * (amat - 0.0005486 * qn)
+            am0c2 = am0 * clum ** 2
+            w0_j = w0mev * 1.60217733e-13 * amat
+            gamma = 1.0 + w0_j / am0c2
+            import math
+            bg = math.sqrt(gamma ** 2 - 1.0)
+            return bg
+        except Exception:
+            return 0.0
+
+    def _load_sigma_diag(self, ficsig, data_path):
+        """Charge les 6 valeurs diagonales d'un fichier sigma dans les spinboxes.
+
+        Le fichier contient sigma^2 (variance) en m^2 / (bg)^2.
+        La GUI affiche sigma (ecart-type) en mm (positions) / mrad (impulsions).
+        """
+        try:
+            # Resoudre chemin relatif par rapport au fichier de donnees
+            if data_path and os.path.dirname(data_path):
+                sig_path = os.path.join(os.path.dirname(data_path), ficsig)
+            else:
+                sig_path = ficsig
+            if not os.path.exists(sig_path):
+                sig_path = ficsig
+            if not os.path.exists(sig_path):
+                return
+            import math
+            bg_total = self._compute_betagamma()
+            with open(sig_path, 'r') as sf:
+                spins = [self.sig_dr, self.sig_ds, self.sig_dz,
+                         self.sig_dpz, self.sig_dphi, self.sig_dp]
+                # True = position (m -> mm), False = impulsion (bg -> mrad)
+                is_pos = [True, False, True, False, True, False]
+                for i, spin in enumerate(spins):
+                    line = sf.readline()
+                    if not line:
+                        break
+                    vals = line.replace('d', 'e').replace('D', 'E').split()
+                    if len(vals) > i:
+                        sig2 = float(vals[i])
+                        sig = math.sqrt(max(sig2, 0.0))
+                        if is_pos[i]:
+                            sig *= 1000.0  # m -> mm
+                        else:
+                            # bg -> mrad : angle_mrad = arcsin(p_comp/p_total) * 1000
+                            # Pour petits angles : ~ (sig_bg / bg_total) * 1000
+                            if bg_total > 0:
+                                sig = sig / bg_total * 1000.0
+                        spin.setValue(sig)
+        except Exception:
+            pass  # silencieux si le fichier sigma n'est pas lisible
+
+    def _write_sigma_from_gui(self):
+        """Ecrit un fichier sigma 6x6 diagonal a partir des valeurs GUI.
+
+        La GUI contient sigma (ecart-type) en mm (positions) / mrad (impulsions).
+        Le fichier doit contenir sigma^2 (variance) en m^2 / (bg)^2.
+        """
+        ficsig = self.ficsig_edit.text().strip()
+        if not ficsig:
+            ficsig = 'sigma6d_no_corr.dat'
+            self.ficsig_edit.setText(ficsig)
+        # Resoudre le chemin relatif par rapport au fichier de donnees
+        ficin = self.ficin_edit.text().strip()
+        if ficin and os.path.dirname(ficin):
+            sig_path = os.path.join(os.path.dirname(ficin), ficsig)
+        else:
+            sig_path = ficsig
+        try:
+            bg_total = self._compute_betagamma()
+            # Lire sigma (ecart-type) depuis la GUI
+            sig_gui = [self.sig_dr.value(), self.sig_ds.value(),
+                       self.sig_dz.value(), self.sig_dpz.value(),
+                       self.sig_dphi.value(), self.sig_dp.value()]
+            # True = position (mm -> m), False = impulsion (mrad -> bg)
+            is_pos = [True, False, True, False, True, False]
+            # Convertir en sigma^2 en m^2 / (bg)^2
+            # Epsilon minimal pour eviter sigma^2 = 0 (Cholesky exige matrice > 0)
+            EPS_POS = 1e-30   # m^2 (~ 1e-12 mm)
+            EPS_MOM = 1e-30   # (bg)^2
+            sig2 = []
+            for i, s in enumerate(sig_gui):
+                if is_pos[i]:
+                    s_m = s * 1e-3  # mm -> m
+                    sig2.append(max(s_m * s_m, EPS_POS))
+                else:
+                    # mrad -> bg : sig_bg = sig_mrad * 1e-3 * bg_total
+                    s_bg = s * 1e-3 * bg_total if bg_total > 0 else s
+                    sig2.append(max(s_bg * s_bg, EPS_MOM))
+            with open(sig_path, 'w') as f:
+                for i in range(6):
+                    row = []
+                    for j in range(6):
+                        if i == j:
+                            row.append(_fortran_fmt(sig2[i]))
+                        else:
+                            row.append('0.d0')
+                    f.write('   '.join(row) + '\n')
+            print(f'Fichier sigma ecrit : {sig_path}')
+        except Exception as e:
+            QMessageBox.warning(self, "Erreur sigma", str(e))
 
     def _browse_open(self, edit_widget):
         path, _ = QFileDialog.getOpenFileName(self, "Ouvrir fichier")
@@ -960,6 +1105,8 @@ class InputFormPanel(QWidget):
                 self.ficcor_edit.setText(cor_tokens[0])
                 self.ficmat_edit.setText(cor_tokens[1])
                 self.ficdc_edit.setText(cor_tokens[2])
+                # Charger les diagonales du fichier sigma dans la GUI
+                self._load_sigma_diag(ficsig, path)
 
             # 13. nbdt, ifreq
             vals = f.readline().split()
@@ -1285,6 +1432,9 @@ class InputFormPanel(QWidget):
         else:
             work_dir = '.'
         temp_path = os.path.join(work_dir, '_lions_gui_temp.dat')
+        # Auto-ecrire le fichier sigma si iflcor actif
+        if self.iflcor_spin.value() != 0:
+            self._write_sigma_from_gui()
         self.write_data_file(temp_path)
 
         answers = []
@@ -1310,6 +1460,18 @@ class InputFormPanel(QWidget):
             answers.append(
                 f"{self.bid_xmin.value()} {self.bid_xmax.value()} "
                 f"{self.bid_ymin.value()} {self.bid_ymax.value()}")
+            # Correlations multi-particules (initgra les lit quand d.n > 1)
+            total_n = self.nbrion_spin.value()
+            for fw in self.extra_families:
+                total_n += fw.nbrion_spin.value()
+            if total_n > 1:
+                answers.append(
+                    f"{self.dphi_max.value()} {self.dwsw_max.value()}")
+                answers.append(
+                    f"{self.dr_max.value()} {self.dpr_max.value()}")
+                answers.append(
+                    f"{self.dz_max.value()} {self.dpz_max.value()}")
+                answers.append(str(self.itebid_spin.value()))
             answers.append(
                 f"{self.bary_xmin.value()} {self.bary_xmax.value()} "
                 f"{self.bary_ymin.value()} {self.bary_ymax.value()}")
@@ -1417,6 +1579,12 @@ class InputFormPanel(QWidget):
             'ficcor': self.ficcor_edit.text(),
             'ficmat': self.ficmat_edit.text(),
             'ficdc': self.ficdc_edit.text(),
+            'sig_dr': self.sig_dr.value(),
+            'sig_ds': self.sig_ds.value(),
+            'sig_dz': self.sig_dz.value(),
+            'sig_dpz': self.sig_dpz.value(),
+            'sig_dphi': self.sig_dphi.value(),
+            'sig_dp': self.sig_dp.value(),
             # Simulation
             'nbdt': self.nbdt_spin.value(),
             'ifreq': self.ifreq_spin.value(),
@@ -1536,6 +1704,12 @@ class InputFormPanel(QWidget):
         self.ficcor_edit.setText(data.get('ficcor', 'no'))
         self.ficmat_edit.setText(data.get('ficmat', 'no'))
         self.ficdc_edit.setText(data.get('ficdc', 'no'))
+        self.sig_dr.setValue(data.get('sig_dr', 0.1))
+        self.sig_ds.setValue(data.get('sig_ds', 1.0))
+        self.sig_dz.setValue(data.get('sig_dz', 0.1))
+        self.sig_dpz.setValue(data.get('sig_dpz', 1.0))
+        self.sig_dphi.setValue(data.get('sig_dphi', 0.1))
+        self.sig_dp.setValue(data.get('sig_dp', 1.0))
         # Simulation
         self.nbdt_spin.setValue(data.get('nbdt', 350000))
         self.ifreq_spin.setValue(data.get('ifreq', 30))

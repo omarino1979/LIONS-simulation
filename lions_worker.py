@@ -274,6 +274,54 @@ class SimulationWorker(QThread):
                     'wmevpa': float(wmevpa),
                     'dph': float(dph),
                 }
+
+                # === Scatter: toutes les particules actives de la famille ===
+                n_k = d.nbrion[k]
+                if n_k > 1:
+                    idx_s = d.index[k]
+                    idx_e = idx_s + n_k
+                    ok_k = d.ok[idx_s:idx_e]
+
+                    x_a = d.x[idx_s:idx_e][ok_k] * 1000.0
+                    y_a = d.y[idx_s:idx_e][ok_k] * 1000.0
+                    z_a = d.z[idx_s:idx_e][ok_k] * 1000.0
+                    r_a = np.sqrt(x_a**2 + y_a**2)
+
+                    # Theta (deg)
+                    safe_r = np.where(r_a > 0, r_a, 1.0)
+                    theta_a = np.arccos(np.clip(x_a / safe_r, -1.0, 1.0))
+                    theta_a[y_a < 0.0] = 2.0 * np.pi - theta_a[y_a < 0.0]
+                    theta_a = 180.0 / np.pi * theta_a
+                    theta_a[r_a == 0] = 0.0
+
+                    # Pz angle (mrad)
+                    px_a = d.px[idx_s:idx_e][ok_k]
+                    py_a = d.py[idx_s:idx_e][ok_k]
+                    pz_a = d.pz[idx_s:idx_e][ok_k]
+                    ppp_a = np.sqrt(px_a**2 + py_a**2 + pz_a**2)
+                    safe_p = np.where(ppp_a > 0, ppp_a, 1.0)
+                    tpz_a = np.arcsin(np.clip(pz_a / safe_p, -1.0, 1.0)) * 1000.0
+                    tpz_a[ppp_a == 0] = 0.0
+
+                    # Energie (MeV/A)
+                    ga_a = d.ga[idx_s:idx_e][ok_k]
+                    am0c2_a = d.am0c2[idx_s:idx_e][ok_k]
+                    wmevpa_a = am0c2_a * (ga_a - 1.0) / 1.60217733e-13 / d.a[k]
+
+                    # dphi (deg)
+                    tetall_a = theta_a + 360.0 * (d.numtou - 1)
+                    dph_a = phihf - d.harm * tetall_a - 90.0
+
+                    data['scatter_x'] = x_a
+                    data['scatter_y'] = y_a
+                    data['scatter_z'] = z_a
+                    data['scatter_r'] = r_a
+                    data['scatter_theta'] = theta_a
+                    data['scatter_pz'] = tpz_a
+                    data['scatter_dph'] = dph_a
+                    data['scatter_wmevpa'] = wmevpa_a
+                    data['scatter_turn'] = d.numtou - 1.0 + theta_a / 360.0
+
                 self.iteration_data.emit(data)
         except Exception:
             pass  # Ne pas bloquer la simulation pour un probleme de plot

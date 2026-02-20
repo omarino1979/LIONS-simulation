@@ -1260,6 +1260,7 @@ def init(d):
 
         d.iflcor = int(f20.readline().split()[0])
         d.ficsig = "pas de fichier correl..."
+        sigma_matrices = []
         if d.iflcor != 0:
             m = 6
             d.ficsig = f20.readline().strip()
@@ -1283,94 +1284,15 @@ def init(d):
                     '  tr     r      teta   drdc  dsdc  dphidc'
                     ' epsrdc  dwswdc        wmpa   dwdc        dwdphidc\n')
 
-            boite(d)
-            calcb(d)
+            # Pre-lire les matrices sigma (calcul differe apres chargement champ magnetique)
             for k in range(d.nbrfam):
-                nbr = d.nbrion[k]
-                ps = remp(m, nbr)
-                d.dxs[:, :nbr] = ps
-                # Lire matrice de corrélation
                 cor_mat = np.zeros((6, 6), dtype=np.float64)
                 for i in range(6):
-                    vals = f25.readline().split()
+                    vals_sig = f25.readline().split()
                     for j in range(6):
-                        cor_mat[i, j] = fortran_float(vals[j])
-                rcor = choles(m, cor_mat)
-                trcor = rcor.T
-                d.dxtmp[:6, :nbr] = 0.0
-                for i in range(6):
-                    for j in range(6):
-                        d.dxtmp[i, :nbr] += trcor[i, j] * d.dxs[j, :nbr]
-                d.dxs[:6, :nbr] = d.dxtmp[:6, :nbr]
-
-                i1 = d.index[k]
-                i2 = i1 + d.nbrion[k]
-                rc = -d.am0c[k] * d.p[i1] / d.q[i1] / d.bz[i1]
-
-                if d.r0[k] > d.rmax1:
-                    print('prise en compte de sqrt(cos(phi))...')
-                    d.vec4[:nbr] = np.sqrt(np.cos(d.harm * d.dxs[4, :nbr] / rc))
-                    d.dxs[0, :nbr] = d.dxs[0, :nbr] * d.vec4[:nbr] - rc * (1.0 - d.vec4[:nbr])
-                else:
-                    print('pas de sqrt(cos(phi))...')
-
-                d.vec1[:nbr] = np.cos(d.dxs[4, :nbr] / rc)
-                d.vec2[:nbr] = np.sin(d.dxs[4, :nbr] / rc)
-                d.vec3[:nbr] = np.sin(d.dxs[4, :nbr] / rc / 2.0)**2
-                d.dxd[0, :nbr] = d.dxs[0, :nbr] - 2.0 * (rc + d.dxs[0, :nbr]) * d.vec3[:nbr]
-                d.dxs[5, :nbr] = np.sqrt(
-                    (d.p[i1] + d.dxs[5, :nbr])**2 -
-                    d.dxs[1, :nbr]**2 - d.dxs[3, :nbr]**2) - d.p[i1]
-                d.dxd[4, :nbr] = (rc + d.dxs[0, :nbr]) * d.vec2[:nbr]
-                d.dxd[1, :nbr] = d.dxs[1, :nbr] * d.vec1[:nbr] - d.dxs[5, :nbr] * d.vec2[:nbr]
-                d.dxd[5, :nbr] = d.dxs[1, :nbr] * d.vec2[:nbr] + d.dxs[5, :nbr] * d.vec1[:nbr]
-                d.dxd[2:4, :nbr] = d.dxs[2:4, :nbr]
-
-                co = np.cos(d.teta0[k] - d.pr0[k])
-                si = np.sin(d.teta0[k] - d.pr0[k])
-                d.rot[:] = 0.0
-                d.rot[0, 0] = co
-                d.rot[0, 4] = -si
-                d.rot[1, 1] = co
-                d.rot[1, 5] = -si
-                d.rot[2, 2] = 1.0
-                d.rot[3, 3] = 1.0
-                d.rot[4, 0] = si
-                d.rot[4, 4] = co
-                d.rot[5, 1] = si
-                d.rot[5, 5] = co
-                d.dxtmp[:6, :nbr] = 0.0
-                for i in range(6):
-                    for j in range(6):
-                        d.dxtmp[i, :nbr] += d.rot[i, j] * d.dxd[j, :nbr]
-                d.dxd[:6, :nbr] = d.dxtmp[:6, :nbr]
-
-                d.x[i1:i2] += d.dxd[0, :nbr]
-                d.y[i1:i2] += d.dxd[4, :nbr]
-                d.vec[:nbr] = d.px[i1:i2] * d.vec1[:nbr] - d.py[i1:i2] * d.vec2[:nbr]
-                d.py[i1:i2] = d.px[i1:i2] * d.vec2[:nbr] + d.py[i1:i2] * d.vec1[:nbr] + d.dxd[5, :nbr]
-                d.px[i1:i2] = d.vec[:nbr] + d.dxd[1, :nbr]
-                if d.espace[:2] == '3d':
-                    d.z[i1:i2] += d.dxd[2, :nbr]
-                    d.pz[i1:i2] += d.dxd[3, :nbr]
-                if d.r0[k] > d.rmax1:
-                    d.px[i1:i2] *= d.vec4[:nbr]
-                    d.py[i1:i2] *= d.vec4[:nbr]
-                    d.pz[i1:i2] *= d.vec4[:nbr]
-
+                        cor_mat[i, j] = fortran_float(vals_sig[j])
+                sigma_matrices.append(cor_mat)
             f25.close()
-
-            if d.ficloa != 'no':
-                print('attention : chargement paquet d ions...')
-                with open(d.ficloa, 'rb') as f26:
-                    for i in range(d.n):
-                        data = np.fromfile(f26, dtype=np.float64, count=3)
-                        if len(data) == 3:
-                            d.x[i], d.y[i], d.z[i] = data
-                    for i in range(d.n):
-                        data = np.fromfile(f26, dtype=np.float64, count=3)
-                        if len(data) == 3:
-                            d.px[i], d.py[i], d.pz[i] = data
 
         if d.np_ != d.n:
             print(f'n np : {d.n} {d.np_}')
@@ -1592,6 +1514,92 @@ def init(d):
     d.hx2m1 = 1.0 / d.hx2
     d.hy2m1 = 1.0 / d.hy2
     d.hx2hy2m1 = 1.0 / d.hx2hy2
+
+    # Distribution des particules (iflcor) - APRES chargement champ magnetique
+    if d.iflcor != 0:
+        m = 6
+        boite(d)
+        calcb(d)
+        for k in range(d.nbrfam):
+            nbr = d.nbrion[k]
+            if nbr <= 1:
+                continue  # une seule particule, pas de distribution a appliquer
+            ps = remp(m, nbr)
+            d.dxs[:, :nbr] = ps
+            rcor = choles(m, sigma_matrices[k])
+            trcor = rcor.T
+            d.dxtmp[:6, :nbr] = 0.0
+            for i in range(6):
+                for j in range(6):
+                    d.dxtmp[i, :nbr] += trcor[i, j] * d.dxs[j, :nbr]
+            d.dxs[:6, :nbr] = d.dxtmp[:6, :nbr]
+
+            i1 = d.index[k]
+            i2 = i1 + d.nbrion[k]
+            rc = -d.am0c[k] * d.p[i1] / d.q[i1] / d.bz[i1]
+
+            if d.r0[k] > d.rmax1:
+                print('prise en compte de sqrt(cos(phi))...')
+                d.vec4[:nbr] = np.sqrt(np.cos(d.harm * d.dxs[4, :nbr] / rc))
+                d.dxs[0, :nbr] = d.dxs[0, :nbr] * d.vec4[:nbr] - rc * (1.0 - d.vec4[:nbr])
+            else:
+                print('pas de sqrt(cos(phi))...')
+
+            d.vec1[:nbr] = np.cos(d.dxs[4, :nbr] / rc)
+            d.vec2[:nbr] = np.sin(d.dxs[4, :nbr] / rc)
+            d.vec3[:nbr] = np.sin(d.dxs[4, :nbr] / rc / 2.0)**2
+            d.dxd[0, :nbr] = d.dxs[0, :nbr] - 2.0 * (rc + d.dxs[0, :nbr]) * d.vec3[:nbr]
+            d.dxs[5, :nbr] = np.sqrt(
+                (d.p[i1] + d.dxs[5, :nbr])**2 -
+                d.dxs[1, :nbr]**2 - d.dxs[3, :nbr]**2) - d.p[i1]
+            d.dxd[4, :nbr] = (rc + d.dxs[0, :nbr]) * d.vec2[:nbr]
+            d.dxd[1, :nbr] = d.dxs[1, :nbr] * d.vec1[:nbr] - d.dxs[5, :nbr] * d.vec2[:nbr]
+            d.dxd[5, :nbr] = d.dxs[1, :nbr] * d.vec2[:nbr] + d.dxs[5, :nbr] * d.vec1[:nbr]
+            d.dxd[2:4, :nbr] = d.dxs[2:4, :nbr]
+
+            co = np.cos(d.teta0[k] - d.pr0[k])
+            si = np.sin(d.teta0[k] - d.pr0[k])
+            d.rot[:] = 0.0
+            d.rot[0, 0] = co
+            d.rot[0, 4] = -si
+            d.rot[1, 1] = co
+            d.rot[1, 5] = -si
+            d.rot[2, 2] = 1.0
+            d.rot[3, 3] = 1.0
+            d.rot[4, 0] = si
+            d.rot[4, 4] = co
+            d.rot[5, 1] = si
+            d.rot[5, 5] = co
+            d.dxtmp[:6, :nbr] = 0.0
+            for i in range(6):
+                for j in range(6):
+                    d.dxtmp[i, :nbr] += d.rot[i, j] * d.dxd[j, :nbr]
+            d.dxd[:6, :nbr] = d.dxtmp[:6, :nbr]
+
+            d.x[i1:i2] += d.dxd[0, :nbr]
+            d.y[i1:i2] += d.dxd[4, :nbr]
+            d.vec[:nbr] = d.px[i1:i2] * d.vec1[:nbr] - d.py[i1:i2] * d.vec2[:nbr]
+            d.py[i1:i2] = d.px[i1:i2] * d.vec2[:nbr] + d.py[i1:i2] * d.vec1[:nbr] + d.dxd[5, :nbr]
+            d.px[i1:i2] = d.vec[:nbr] + d.dxd[1, :nbr]
+            if d.espace[:2] in ('3d', '6d'):
+                d.z[i1:i2] += d.dxd[2, :nbr]
+                d.pz[i1:i2] += d.dxd[3, :nbr]
+            if d.r0[k] > d.rmax1:
+                d.px[i1:i2] *= d.vec4[:nbr]
+                d.py[i1:i2] *= d.vec4[:nbr]
+                d.pz[i1:i2] *= d.vec4[:nbr]
+
+        if d.ficloa != 'no':
+            print('attention : chargement paquet d ions...')
+            with open(d.ficloa, 'rb') as f26:
+                for i in range(d.n):
+                    data = np.fromfile(f26, dtype=np.float64, count=3)
+                    if len(data) == 3:
+                        d.x[i], d.y[i], d.z[i] = data
+                for i in range(d.n):
+                    data = np.fromfile(f26, dtype=np.float64, count=3)
+                    if len(data) == 3:
+                        d.px[i], d.py[i], d.pz[i] = data
 
     rr = np.sqrt(d.x[0]**2 + d.y[0]**2)
     d.tetnew = np.arccos(d.x[0] / rr)
